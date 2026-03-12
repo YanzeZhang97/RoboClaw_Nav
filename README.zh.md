@@ -52,4 +52,4 @@ For English, see [README.md](README.md).
 
 ## 微信群
 
-<img src="wechat/wechat_group.jpg" alt="RoboClaw 微信群" width="300" />
+<img src="wechat/wechat_group.png" alt="RoboClaw 微信群" width="300" />
