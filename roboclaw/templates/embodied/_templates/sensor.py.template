@@ -2,6 +2,18 @@
 
 from roboclaw.embodied.definition.components.sensors import SensorManifest
 from roboclaw.embodied.definition.foundation.schema import SensorKind
+from roboclaw.embodied.workspace import (
+    WORKSPACE_SCHEMA_VERSION,
+    WorkspaceAssetContract,
+    WorkspaceAssetKind,
+    WorkspaceExportConvention,
+)
+
+WORKSPACE_ASSET = WorkspaceAssetContract(
+    kind=WorkspaceAssetKind.SENSOR,
+    schema_version=WORKSPACE_SCHEMA_VERSION,
+    export_convention=WorkspaceExportConvention.SENSOR,
+)
 
 SENSOR = SensorManifest(
     id="<sensor_id>",

@@ -1,6 +1,18 @@
 """Workspace deployment profile template."""
 
 from roboclaw.embodied.definition.systems.deployments import DeploymentProfile
+from roboclaw.embodied.workspace import (
+    WORKSPACE_SCHEMA_VERSION,
+    WorkspaceAssetContract,
+    WorkspaceAssetKind,
+    WorkspaceExportConvention,
+)
+
+WORKSPACE_ASSET = WorkspaceAssetContract(
+    kind=WorkspaceAssetKind.DEPLOYMENT,
+    schema_version=WORKSPACE_SCHEMA_VERSION,
+    export_convention=WorkspaceExportConvention.DEPLOYMENT,
+)
 
 DEPLOYMENT = DeploymentProfile(
     id="<deployment_id>",

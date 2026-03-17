@@ -2,6 +2,18 @@
 
 from roboclaw.embodied.definition.foundation.schema import SimulatorKind
 from roboclaw.embodied.definition.systems.simulators import SimulatorWorld
+from roboclaw.embodied.workspace import (
+    WORKSPACE_SCHEMA_VERSION,
+    WorkspaceAssetContract,
+    WorkspaceAssetKind,
+    WorkspaceExportConvention,
+)
+
+WORKSPACE_ASSET = WorkspaceAssetContract(
+    kind=WorkspaceAssetKind.WORLD,
+    schema_version=WORKSPACE_SCHEMA_VERSION,
+    export_convention=WorkspaceExportConvention.WORLD,
+)
 
 WORLD = SimulatorWorld(
     id="<world_id>",

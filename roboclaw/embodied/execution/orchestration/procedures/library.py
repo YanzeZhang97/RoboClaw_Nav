@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
-from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureDefinition, ProcedureKind, ProcedureStep
+from roboclaw.embodied.execution.orchestration.procedures.model import (
+    InterventionTiming,
+    OperatorInterventionPoint,
+    PreconditionOperator,
+    PreconditionSource,
+    ProcedureDefinition,
+    ProcedureKind,
+    ProcedurePrecondition,
+    ProcedureRetryPolicy,
+    ProcedureStep,
+    ProcedureStepEdge,
+)
 from roboclaw.embodied.definition.foundation.schema import CapabilityFamily
 
 CONNECT_PROCEDURE = ProcedureDefinition(
@@ -11,10 +22,58 @@ CONNECT_PROCEDURE = ProcedureDefinition(
     description="Probe environment, select target, connect adapter, and verify ready state.",
     required_capabilities=(CapabilityFamily.LIFECYCLE,),
     steps=(
-        ProcedureStep("probe_env", "probe_env", "Probe the environment and available transport."),
-        ProcedureStep("select_target", "resolve_target", "Resolve the desired execution target."),
-        ProcedureStep("connect", "connect", "Connect the adapter to the target."),
-        ProcedureStep("verify_state", "get_state", "Verify the runtime is ready."),
+        ProcedureStep(
+            "probe_env",
+            "probe_env",
+            "Probe the environment and available transport.",
+            timeout_s=10.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=1.0),
+        ),
+        ProcedureStep(
+            "select_target",
+            "resolve_target",
+            "Resolve the desired execution target.",
+            preconditions=(
+                ProcedurePrecondition(
+                    id="target_hint_present",
+                    source=PreconditionSource.INPUT,
+                    key="target_id",
+                    operator=PreconditionOperator.EXISTS,
+                    required=False,
+                    description="Target hint may be provided by the user or deployment defaults.",
+                ),
+            ),
+            timeout_s=5.0,
+        ),
+        ProcedureStep(
+            "connect",
+            "connect",
+            "Connect the adapter to the target.",
+            timeout_s=30.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=2, backoff_s=1.0),
+        ),
+        ProcedureStep(
+            "verify_state",
+            "ready",
+            "Verify the runtime is ready.",
+            timeout_s=10.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=0.5),
+        ),
+    ),
+    step_edges=(
+        ProcedureStepEdge("probe_env", "select_target"),
+        ProcedureStepEdge("select_target", "connect"),
+        ProcedureStepEdge("connect", "verify_state"),
+    ),
+    default_timeout_s=20.0,
+    default_retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=1.0),
+    operator_interventions=(
+        OperatorInterventionPoint(
+            id="manual_network_check",
+            step_id="connect",
+            timing=InterventionTiming.ON_FAILURE,
+            instruction="Check cable/network power and retry connection.",
+        ),
     ),
 )
 
@@ -24,9 +83,34 @@ CALIBRATE_PROCEDURE = ProcedureDefinition(
     description="List calibration targets, launch calibration, and track task progress.",
     required_capabilities=(CapabilityFamily.CALIBRATION,),
     steps=(
-        ProcedureStep("list_targets", "list_calibration_targets", "List calibration targets."),
-        ProcedureStep("start", "start_calibration", "Start calibration for the selected targets."),
-        ProcedureStep("track", "track_calibration", "Track calibration progress until completion."),
+        ProcedureStep(
+            "list_targets",
+            "list_calibration_targets",
+            "List calibration targets.",
+            timeout_s=10.0,
+        ),
+        ProcedureStep(
+            "start",
+            "start_calibration",
+            "Start calibration for the selected targets.",
+            timeout_s=30.0,
+        ),
+        ProcedureStep(
+            "track",
+            "track_calibration",
+            "Track calibration progress until completion.",
+            timeout_s=120.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=2.0),
+        ),
+    ),
+    default_timeout_s=60.0,
+    operator_interventions=(
+        OperatorInterventionPoint(
+            id="pose_robot_for_calibration",
+            step_id="start",
+            timing=InterventionTiming.BEFORE_STEP,
+            instruction="Move robot to safe calibration posture before starting.",
+        ),
     ),
 )
 
@@ -36,9 +120,44 @@ MOVE_PROCEDURE = ProcedureDefinition(
     description="Resolve a normalized primitive and execute it safely.",
     required_capabilities=(CapabilityFamily.JOINT_MOTION,),
     steps=(
-        ProcedureStep("read_state", "get_state", "Read current state before moving."),
-        ProcedureStep("resolve_primitive", "resolve_primitive", "Resolve the normalized primitive."),
-        ProcedureStep("execute", "execute_primitive", "Execute the primitive through the adapter."),
+        ProcedureStep(
+            "read_state",
+            "get_state",
+            "Read current state before moving.",
+            timeout_s=5.0,
+        ),
+        ProcedureStep(
+            "resolve_primitive",
+            "resolve_primitive",
+            "Resolve the normalized primitive.",
+            preconditions=(
+                ProcedurePrecondition(
+                    id="request_has_primitive",
+                    source=PreconditionSource.INPUT,
+                    key="primitive_name",
+                    operator=PreconditionOperator.EXISTS,
+                    description="Move procedure requires a normalized primitive identifier.",
+                ),
+            ),
+            timeout_s=5.0,
+        ),
+        ProcedureStep(
+            "execute",
+            "execute_primitive",
+            "Execute the primitive through the adapter.",
+            timeout_s=30.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=1.0),
+        ),
+    ),
+    default_timeout_s=20.0,
+    operator_interventions=(
+        OperatorInterventionPoint(
+            id="confirm_high_risk_motion",
+            step_id="execute",
+            timing=InterventionTiming.BEFORE_STEP,
+            instruction="Confirm the workspace is clear before executing high-risk motion.",
+            blocking=True,
+        ),
     ),
 )
 
@@ -48,11 +167,42 @@ DEBUG_PROCEDURE = ProcedureDefinition(
     description="Collect environment probe, state, sensor snapshots, and debug bundle.",
     required_capabilities=(CapabilityFamily.DIAGNOSTICS,),
     steps=(
-        ProcedureStep("probe_env", "probe_env", "Probe environment health."),
-        ProcedureStep("state", "get_state", "Read normalized state."),
-        ProcedureStep("sensor", "capture_sensor", "Capture a primary sensor snapshot if available."),
-        ProcedureStep("bundle", "debug_snapshot", "Collect the debug bundle."),
+        ProcedureStep(
+            "probe_env",
+            "probe_env",
+            "Probe environment health.",
+            timeout_s=8.0,
+        ),
+        ProcedureStep(
+            "state",
+            "get_state",
+            "Read normalized state.",
+            timeout_s=8.0,
+        ),
+        ProcedureStep(
+            "sensor",
+            "capture_sensor",
+            "Capture a primary sensor snapshot if available.",
+            preconditions=(
+                ProcedurePrecondition(
+                    id="sensor_available",
+                    source=PreconditionSource.RUNTIME,
+                    key="primary_sensor_id",
+                    operator=PreconditionOperator.EXISTS,
+                    required=False,
+                    description="Sensor capture is optional when no sensor is configured.",
+                ),
+            ),
+            timeout_s=10.0,
+        ),
+        ProcedureStep(
+            "bundle",
+            "debug_snapshot",
+            "Collect the debug bundle.",
+            timeout_s=15.0,
+        ),
     ),
+    default_timeout_s=15.0,
 )
 
 RESET_PROCEDURE = ProcedureDefinition(
@@ -61,9 +211,46 @@ RESET_PROCEDURE = ProcedureDefinition(
     description="Stop active work, recover if needed, and reset to the default safe pose.",
     required_capabilities=(CapabilityFamily.RECOVERY,),
     steps=(
-        ProcedureStep("stop", "stop", "Stop active motion or tasks."),
-        ProcedureStep("recover", "recover", "Run recovery if the system is in a bad state."),
-        ProcedureStep("reset", "reset", "Reset to the default safe pose or mode."),
+        ProcedureStep(
+            "stop",
+            "stop",
+            "Stop active motion or tasks.",
+            timeout_s=5.0,
+        ),
+        ProcedureStep(
+            "recover",
+            "recover",
+            "Run recovery if the system is in a bad state.",
+            preconditions=(
+                ProcedurePrecondition(
+                    id="error_state_present",
+                    source=PreconditionSource.RUNTIME,
+                    key="status",
+                    operator=PreconditionOperator.IN_SET,
+                    expected=("error", "busy"),
+                    required=False,
+                    description="Recover is optional if runtime is already healthy.",
+                ),
+            ),
+            timeout_s=20.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=1.0),
+        ),
+        ProcedureStep(
+            "reset",
+            "reset",
+            "Reset to the default safe pose or mode.",
+            timeout_s=20.0,
+            retry_policy=ProcedureRetryPolicy(max_retries=1, backoff_s=1.0),
+        ),
+    ),
+    default_timeout_s=20.0,
+    operator_interventions=(
+        OperatorInterventionPoint(
+            id="clear_workspace",
+            step_id="reset",
+            timing=InterventionTiming.BEFORE_STEP,
+            instruction="Clear workspace around robot before reset.",
+        ),
     ),
 )
 

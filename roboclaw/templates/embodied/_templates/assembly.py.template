@@ -2,11 +2,31 @@
 
 from roboclaw.embodied.definition.components.robots import Ros2RobotConfig
 from roboclaw.embodied.definition.components.sensors import Ros2CameraConfig
-from roboclaw.embodied.definition.systems.assemblies import AssemblyBlueprint, RobotAttachment, SensorAttachment
+from roboclaw.embodied.definition.systems.assemblies import (
+    AssemblyBlueprint,
+    ControlGroup,
+    FrameTransform,
+    RobotAttachment,
+    SensorAttachment,
+    ToolAttachment,
+    Transform3D,
+)
 from roboclaw.embodied.execution.integration.carriers.real import build_real_ros2_target
 from roboclaw.embodied.execution.integration.carriers.sim import build_sim_ros2_target
 from roboclaw.embodied.execution.integration.transports.ros2 import build_standard_ros2_contract
 from roboclaw.embodied.definition.foundation.schema import SimulatorKind
+from roboclaw.embodied.workspace import (
+    WORKSPACE_SCHEMA_VERSION,
+    WorkspaceAssetContract,
+    WorkspaceAssetKind,
+    WorkspaceExportConvention,
+)
+
+WORKSPACE_ASSET = WorkspaceAssetContract(
+    kind=WorkspaceAssetKind.ASSEMBLY,
+    schema_version=WORKSPACE_SCHEMA_VERSION,
+    export_convention=WorkspaceExportConvention.ASSEMBLY,
+)
 
 ARM_CONFIG = Ros2RobotConfig(
     namespace="<ros_namespace>",
@@ -57,4 +77,41 @@ ASSEMBLY = AssemblyBlueprint(
     ),
     execution_targets=(REAL_TARGET, SIM_TARGET),
     default_execution_target_id="real",
+    frame_transforms=(
+        FrameTransform(
+            parent_frame="<base_parent_frame>",
+            child_frame="<base_frame>",
+            transform=Transform3D(
+                translation_xyz=(0.0, 0.0, 0.0),
+                rotation_rpy=(0.0, 0.0, 0.0),
+            ),
+        ),
+        FrameTransform(
+            parent_frame="<base_frame>",
+            child_frame="<tool_frame>",
+            transform=Transform3D(
+                translation_xyz=(0.0, 0.0, 0.0),
+                rotation_rpy=(0.0, 0.0, 0.0),
+            ),
+        ),
+    ),
+    tools=(
+        ToolAttachment(
+            attachment_id="primary_tool",
+            robot_attachment_id="primary",
+            tool_id="<tool_id>",
+            mount_frame="<tool_frame>",
+            tcp_frame="<tcp_frame>",
+            kind="end_effector",
+        ),
+    ),
+    control_groups=(
+        ControlGroup(
+            id="manipulation",
+            robot_attachment_ids=("primary",),
+            sensor_attachment_ids=("wrist_camera",),
+            mode_hints=("position",),
+        ),
+    ),
+    default_control_group_id="manipulation",
 ).build()

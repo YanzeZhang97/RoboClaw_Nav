@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from roboclaw.embodied.definition import (
     AssemblyRegistry,
@@ -19,6 +20,9 @@ from roboclaw.embodied.execution import (
     DEFAULT_PROCEDURES,
     ProcedureRegistry,
 )
+
+if TYPE_CHECKING:
+    from roboclaw.embodied.workspace import WorkspaceLoadReport
 
 
 @dataclass(frozen=True)
@@ -81,3 +85,11 @@ def build_catalog(workspace: Path | None = None) -> EmbodiedCatalog:
     from roboclaw.embodied.workspace import load_workspace_assets
 
     return load_workspace_assets(catalog, workspace)
+
+
+def inspect_workspace(workspace: Path) -> WorkspaceLoadReport:
+    """Inspect workspace assets using loader static contract checks."""
+
+    from roboclaw.embodied.workspace import inspect_workspace_assets
+
+    return inspect_workspace_assets(workspace)

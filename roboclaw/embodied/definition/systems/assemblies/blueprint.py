@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
-from roboclaw.embodied.definition.systems.assemblies.model import AssemblyManifest, RobotAttachment, SensorAttachment
+from roboclaw.embodied.definition.systems.assemblies.model import (
+    AssemblyManifest,
+    ControlGroup,
+    FrameTransform,
+    RobotAttachment,
+    SensorAttachment,
+    ToolAttachment,
+)
 from roboclaw.embodied.execution.integration.carriers import ExecutionTarget
 
 
@@ -34,6 +41,10 @@ class AssemblyBlueprint:
     sensors: tuple[SensorAttachment, ...] = field(default_factory=tuple)
     execution_targets: tuple[ExecutionTarget, ...] = field(default_factory=tuple)
     default_execution_target_id: str | None = None
+    frame_transforms: tuple[FrameTransform, ...] = field(default_factory=tuple)
+    tools: tuple[ToolAttachment, ...] = field(default_factory=tuple)
+    control_groups: tuple[ControlGroup, ...] = field(default_factory=tuple)
+    default_control_group_id: str | None = None
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
@@ -46,6 +57,10 @@ class AssemblyBlueprint:
             sensors=manifest.sensors,
             execution_targets=manifest.execution_targets,
             default_execution_target_id=manifest.default_execution_target_id,
+            frame_transforms=manifest.frame_transforms,
+            tools=manifest.tools,
+            control_groups=manifest.control_groups,
+            default_control_group_id=manifest.default_control_group_id,
             notes=manifest.notes,
         )
 
@@ -66,6 +81,27 @@ class AssemblyBlueprint:
             key_fn=lambda item: item.id,
         )
         return replace(self, execution_targets=targets)
+
+    def with_frame_transform(self, frame_transform: FrameTransform) -> "AssemblyBlueprint":
+        transforms = _dedupe_by_key(
+            (*self.frame_transforms, frame_transform),
+            key_fn=lambda item: item.child_frame,
+        )
+        return replace(self, frame_transforms=transforms)
+
+    def with_tool(self, tool: ToolAttachment) -> "AssemblyBlueprint":
+        tools = _dedupe_by_key(
+            (*self.tools, tool),
+            key_fn=lambda item: item.attachment_id,
+        )
+        return replace(self, tools=tools)
+
+    def with_control_group(self, control_group: ControlGroup) -> "AssemblyBlueprint":
+        groups = _dedupe_by_key(
+            (*self.control_groups, control_group),
+            key_fn=lambda item: item.id,
+        )
+        return replace(self, control_groups=groups)
 
     def remap_sensor(
         self,
@@ -105,6 +141,13 @@ class AssemblyBlueprint:
             )
         return replace(self, default_execution_target_id=target_id)
 
+    def use_default_control_group(self, control_group_id: str) -> "AssemblyBlueprint":
+        if control_group_id not in {group.id for group in self.control_groups}:
+            raise KeyError(
+                f"Control group '{control_group_id}' was not found in blueprint '{self.id}'."
+            )
+        return replace(self, default_control_group_id=control_group_id)
+
     def extend_notes(self, *notes: str) -> "AssemblyBlueprint":
         return replace(self, notes=self.notes + tuple(notes))
 
@@ -117,6 +160,10 @@ class AssemblyBlueprint:
             sensors=self.sensors,
             execution_targets=self.execution_targets,
             default_execution_target_id=self.default_execution_target_id,
+            frame_transforms=self.frame_transforms,
+            tools=self.tools,
+            control_groups=self.control_groups,
+            default_control_group_id=self.default_control_group_id,
             notes=self.notes,
         )
 
@@ -140,10 +187,25 @@ def compose_assemblies(*blueprints: AssemblyBlueprint) -> AssemblyBlueprint:
         tuple(target for blueprint in blueprints for target in blueprint.execution_targets),
         key_fn=lambda item: item.id,
     )
+    frame_transforms = _dedupe_by_key(
+        tuple(frame for blueprint in blueprints for frame in blueprint.frame_transforms),
+        key_fn=lambda item: item.child_frame,
+    )
+    tools = _dedupe_by_key(
+        tuple(tool for blueprint in blueprints for tool in blueprint.tools),
+        key_fn=lambda item: item.attachment_id,
+    )
+    control_groups = _dedupe_by_key(
+        tuple(group for blueprint in blueprints for group in blueprint.control_groups),
+        key_fn=lambda item: item.id,
+    )
     default_target = None
+    default_control_group = None
     for blueprint in blueprints:
         if blueprint.default_execution_target_id:
             default_target = blueprint.default_execution_target_id
+        if blueprint.default_control_group_id:
+            default_control_group = blueprint.default_control_group_id
 
     return AssemblyBlueprint(
         id=base.id,
@@ -153,5 +215,9 @@ def compose_assemblies(*blueprints: AssemblyBlueprint) -> AssemblyBlueprint:
         sensors=sensors,
         execution_targets=targets,
         default_execution_target_id=default_target,
+        frame_transforms=frame_transforms,
+        tools=tools,
+        control_groups=control_groups,
+        default_control_group_id=default_control_group,
         notes=tuple(note for blueprint in blueprints for note in blueprint.notes),
     )

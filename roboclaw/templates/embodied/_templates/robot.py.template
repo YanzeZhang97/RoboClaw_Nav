@@ -1,7 +1,33 @@
 """Workspace robot manifest template."""
 
 from roboclaw.embodied.definition.components.robots import PrimitiveSpec, RobotManifest
-from roboclaw.embodied.definition.foundation.schema import CapabilityFamily, PrimitiveKind, RobotType, SafetyProfile
+from roboclaw.embodied.definition.foundation.schema import (
+    CapabilityFamily,
+    CompletionSemantics,
+    CompletionSpec,
+    HealthFieldSpec,
+    HealthSchema,
+    ObservationFieldSpec,
+    ObservationSchema,
+    ParameterSpec,
+    PrimitiveKind,
+    RobotType,
+    SafetyProfile,
+    ToleranceSpec,
+    ValueUnit,
+)
+from roboclaw.embodied.workspace import (
+    WORKSPACE_SCHEMA_VERSION,
+    WorkspaceAssetContract,
+    WorkspaceAssetKind,
+    WorkspaceExportConvention,
+)
+
+WORKSPACE_ASSET = WorkspaceAssetContract(
+    kind=WorkspaceAssetKind.ROBOT,
+    schema_version=WORKSPACE_SCHEMA_VERSION,
+    export_convention=WorkspaceExportConvention.ROBOT,
+)
 
 ROBOT = RobotManifest(
     id="<robot_id>",
@@ -18,7 +44,50 @@ ROBOT = RobotManifest(
             kind=PrimitiveKind.MOTION,
             capability_family=CapabilityFamily.JOINT_MOTION,
             description="Move one joint-space command.",
+            parameters=(
+                ParameterSpec(
+                    name="positions",
+                    value_type="dict[str,float]",
+                    description="Joint name to target position map.",
+                    required=True,
+                    unit=ValueUnit.RADIAN,
+                    frame="joint_space",
+                ),
+            ),
+            tolerance=ToleranceSpec(absolute=0.02, settle_time_s=0.2),
+            completion=CompletionSpec(
+                semantics=CompletionSemantics.GOAL_REACHED,
+                timeout_s=5.0,
+            ),
             backed_by=("<backend_primitive>",),
+        ),
+    ),
+    observation_schema=ObservationSchema(
+        id="<robot_id>_observation_v1",
+        fields=(
+            ObservationFieldSpec(
+                name="joint_positions",
+                value_type="dict[str,float]",
+                description="Joint positions for all controllable joints.",
+                unit=ValueUnit.RADIAN,
+                frame="joint_space",
+            ),
+        ),
+        frequency_hz=30.0,
+    ),
+    health_schema=HealthSchema(
+        id="<robot_id>_health_v1",
+        fields=(
+            HealthFieldSpec(
+                name="level",
+                value_type="str",
+                description="Normalized health level.",
+            ),
+            HealthFieldSpec(
+                name="fault_code",
+                value_type="str",
+                description="Vendor or adapter fault code.",
+            ),
         ),
     ),
     safety=SafetyProfile(

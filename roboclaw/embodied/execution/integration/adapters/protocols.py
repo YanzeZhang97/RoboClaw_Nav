@@ -14,11 +14,26 @@ class EmbodiedAdapter(Protocol):
     def probe_env(self) -> dict[str, Any]:
         """Inspect the execution environment without mutating state."""
 
+    def check_dependencies(self) -> dict[str, Any]:
+        """Check dependencies declared by the adapter lifecycle contract."""
+
     async def connect(self, *, target_id: str, config: dict[str, Any] | None = None) -> dict[str, Any]:
         """Connect to one execution target."""
 
     async def disconnect(self) -> dict[str, Any]:
         """Disconnect from the active target."""
+
+    async def ready(self) -> dict[str, Any]:
+        """Return readiness state for command execution."""
+
+    async def stop(self, *, scope: str = "all") -> dict[str, Any]:
+        """Stop active tasks or motion."""
+
+    async def reset(self, *, mode: str = "home") -> dict[str, Any]:
+        """Reset adapter state to a known mode."""
+
+    async def recover(self, *, strategy: str | None = None) -> dict[str, Any]:
+        """Apply recovery strategy after failures."""
 
     async def get_state(self) -> dict[str, Any]:
         """Return normalized runtime state."""

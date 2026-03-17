@@ -19,3 +19,4 @@ This directory is where RoboClaw should generate or refine setup-specific embodi
 - Do not copy framework manifests into workspace unless the robot or sensor is truly local-only.
 - Update these files instead of touching `roboclaw/embodied/` when the change is specific to one user's equipment.
 - Workspace Python files are discovered by export name. Use `ROBOT`, `SENSOR`, `ASSEMBLY`, `DEPLOYMENT`, `ADAPTER`, `WORLD`, `SCENARIO`, or the plural form of each.
+- Each generated file should include `WORKSPACE_ASSET = WorkspaceAssetContract(...)` with schema version and migration policy so the loader can validate and migrate safely.

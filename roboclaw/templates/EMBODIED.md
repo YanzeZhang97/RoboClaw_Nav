@@ -43,3 +43,4 @@ embodied/
 - Framework examples should not hardcode one user's SO101, Piper, xArm, or humanoid setup.
 - A workspace assembly may reference a built-in robot id such as `so101`, but the specific ROS2 namespace, topics, camera mounts, and deployment connection values belong in workspace files.
 - Workspace loader convention: generated Python files should export one of `ROBOT`, `SENSOR`, `ASSEMBLY`, `DEPLOYMENT`, `ADAPTER`, `WORLD`, `SCENARIO`, or their plural forms.
+- Workspace contract metadata: generated Python files should also define `WORKSPACE_ASSET = WorkspaceAssetContract(...)` with `kind`, `schema_version`, `export_convention`, and `migration_policy`.
