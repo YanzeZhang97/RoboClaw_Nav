@@ -1,0 +1,27 @@
+"""Workspace robot manifest template."""
+
+from roboclaw.embodied.definition.components.robots import PrimitiveSpec, RobotManifest
+from roboclaw.embodied.definition.foundation.schema import CapabilityFamily, PrimitiveKind, RobotType, SafetyProfile
+
+ROBOT = RobotManifest(
+    id="<robot_id>",
+    name="<robot_name>",
+    description="<robot_description>",
+    robot_type=RobotType.ARM,
+    capability_families=(
+        CapabilityFamily.LIFECYCLE,
+        CapabilityFamily.JOINT_MOTION,
+    ),
+    primitives=(
+        PrimitiveSpec(
+            name="move_joint",
+            kind=PrimitiveKind.MOTION,
+            capability_family=CapabilityFamily.JOINT_MOTION,
+            description="Move one joint-space command.",
+            backed_by=("<backend_primitive>",),
+        ),
+    ),
+    safety=SafetyProfile(
+        default_reset_mode="home",
+    ),
+)

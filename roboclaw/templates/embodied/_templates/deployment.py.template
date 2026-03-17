@@ -1,0 +1,26 @@
+"""Workspace deployment profile template."""
+
+from roboclaw.embodied.definition.systems.deployments import DeploymentProfile
+
+DEPLOYMENT = DeploymentProfile(
+    id="<deployment_id>",
+    assembly_id="<assembly_id>",
+    target_id="<target_id>",
+    connection={
+        "ros_namespace": "<ros_namespace>",
+    },
+    robots={
+        "primary": {
+            "serial_port": "<serial_or_ip>",
+            "calibration_dir": "<calibration_dir>",
+        },
+    },
+    sensors={
+        "wrist_camera": {
+            "device_id": "<device_id>",
+        },
+    },
+    safety_overrides={
+        "max_linear_speed": "<optional>",
+    },
+)

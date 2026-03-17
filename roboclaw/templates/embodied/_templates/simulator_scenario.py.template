@@ -1,0 +1,14 @@
+"""Workspace simulator scenario template."""
+
+from roboclaw.embodied.definition.systems.simulators import SimulatorScenario
+
+SCENARIO = SimulatorScenario(
+    id="<scenario_id>",
+    assembly_id="<assembly_id>",
+    target_id="<target_id>",
+    world_id="<world_id>",
+    description="<scenario_description>",
+    notes=(
+        "Workspace simulator scenario.",
+    ),
+)

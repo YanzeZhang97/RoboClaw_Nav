@@ -1,0 +1,60 @@
+"""Workspace assembly template."""
+
+from roboclaw.embodied.definition.components.robots import Ros2RobotConfig
+from roboclaw.embodied.definition.components.sensors import Ros2CameraConfig
+from roboclaw.embodied.definition.systems.assemblies import AssemblyBlueprint, RobotAttachment, SensorAttachment
+from roboclaw.embodied.execution.integration.carriers.real import build_real_ros2_target
+from roboclaw.embodied.execution.integration.carriers.sim import build_sim_ros2_target
+from roboclaw.embodied.execution.integration.transports.ros2 import build_standard_ros2_contract
+from roboclaw.embodied.definition.foundation.schema import SimulatorKind
+
+ARM_CONFIG = Ros2RobotConfig(
+    namespace="<ros_namespace>",
+    base_frame="<base_frame>",
+    tool_frame="<tool_frame>",
+    joint_state_topic="<joint_state_topic>",
+    command_action="<command_action>",
+)
+
+PRIMARY_CAMERA_CONFIG = Ros2CameraConfig(
+    frame_id="<camera_frame>",
+    topic_namespace="<camera_topic_namespace>",
+    image_topic_name="<image_topic_name>",
+    info_topic_name="<camera_info_topic_name>",
+)
+
+REAL_TARGET = build_real_ros2_target(
+    target_id="real",
+    description="Real hardware target.",
+    ros2=build_standard_ros2_contract("<assembly_id>", "real"),
+)
+
+SIM_TARGET = build_sim_ros2_target(
+    target_id="sim_gazebo",
+    simulator=SimulatorKind.GAZEBO,
+    description="Gazebo simulation target.",
+    ros2=build_standard_ros2_contract("<assembly_id>", "sim_gazebo"),
+)
+
+ASSEMBLY = AssemblyBlueprint(
+    id="<assembly_id>",
+    name="<assembly_name>",
+    description="<assembly_description>",
+    robots=(
+        RobotAttachment(
+            attachment_id="primary",
+            robot_id="<robot_id>",
+            config=ARM_CONFIG,
+        ),
+    ),
+    sensors=(
+        SensorAttachment(
+            attachment_id="wrist_camera",
+            sensor_id="rgb_camera",
+            mount="wrist",
+            config=PRIMARY_CAMERA_CONFIG,
+        ),
+    ),
+    execution_targets=(REAL_TARGET, SIM_TARGET),
+    default_execution_target_id="real",
+).build()

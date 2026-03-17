@@ -1,0 +1,11 @@
+"""Workspace sensor manifest template."""
+
+from roboclaw.embodied.definition.components.sensors import SensorManifest
+from roboclaw.embodied.definition.foundation.schema import SensorKind
+
+SENSOR = SensorManifest(
+    id="<sensor_id>",
+    kind=SensorKind.CAMERA,
+    description="<sensor_description>",
+    default_topic_name="<topic_name>",
+)

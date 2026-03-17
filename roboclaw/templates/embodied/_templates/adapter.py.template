@@ -1,0 +1,15 @@
+"""Workspace adapter binding template."""
+
+from roboclaw.embodied.definition.foundation.schema import TransportKind
+from roboclaw.embodied.execution.integration.adapters import AdapterBinding
+
+ADAPTER = AdapterBinding(
+    id="<adapter_id>",
+    assembly_id="<assembly_id>",
+    transport=TransportKind.ROS2,
+    implementation="<workspace_module_or_entrypoint>",
+    supported_targets=("real",),
+    notes=(
+        "Workspace-specific adapter binding.",
+    ),
+)

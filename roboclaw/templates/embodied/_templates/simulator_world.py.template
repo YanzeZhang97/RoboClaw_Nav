@@ -1,0 +1,14 @@
+"""Workspace simulator world template."""
+
+from roboclaw.embodied.definition.foundation.schema import SimulatorKind
+from roboclaw.embodied.definition.systems.simulators import SimulatorWorld
+
+WORLD = SimulatorWorld(
+    id="<world_id>",
+    simulator=SimulatorKind.GAZEBO,
+    description="<world_description>",
+    assets=("<scene_path_or_name>",),
+    notes=(
+        "Workspace simulator world.",
+    ),
+)
