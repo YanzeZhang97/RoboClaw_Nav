@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=./common.sh
+source "${SCRIPT_DIR}/common.sh"
+
+INSTANCE="${1:-}"
+shift || true
+require_instance "${INSTANCE}"
+ensure_image_exists "${INSTANCE}"
+ensure_instance_dir "${INSTANCE}"
+configure_proxy_env
+AUTH_PATH="$(host_codex_auth_path || true)"
+
+if [ "$#" -eq 0 ]; then
+  set -- status
+fi
+
+"${SCRIPT_DIR}/bootstrap-instance.sh" "${INSTANCE}"
+
+DOCKER_ARGS=(
+  --rm
+  --network host
+  --user "$(id -u):$(id -g)"
+  -e HOME=/roboclaw-instance/home
+  -e ROBOCLAW_CONFIG_PATH=/roboclaw-instance/config.json
+  -e ROBOCLAW_WORKSPACE_PATH=/roboclaw-instance/workspace
+  -e HTTP_PROXY="${HTTP_PROXY:-}"
+  -e HTTPS_PROXY="${HTTPS_PROXY:-}"
+  -e ALL_PROXY="${ALL_PROXY:-}"
+  -e http_proxy="${http_proxy:-}"
+  -e https_proxy="${https_proxy:-}"
+  -e all_proxy="${all_proxy:-}"
+  -v "$(instance_dir "${INSTANCE}"):/roboclaw-instance"
+)
+
+if [ -n "${AUTH_PATH}" ]; then
+  DOCKER_ARGS+=(-v "${AUTH_PATH}:/roboclaw-instance/home/.codex/auth.json:ro")
+fi
+
+docker run "${DOCKER_ARGS[@]}" \
+  "$(image_ref "${INSTANCE}")" \
+  "$@"

@@ -337,3 +337,15 @@ The core path is in acceptable shape only when all of the following are true:
 If the first four items pass but the later ones fail, the basic startup path works but the embodied entry path is still not strong enough.
 
 If the first four items are unstable, the PR is not yet ready as a first-run external demo path.
+
+## 12. Docker Workflow
+
+For remote Linux hosts, RoboClaw also supports an isolated Docker workflow that keeps container state out of the host `~/.roboclaw` tree by default.
+
+- Per-instance state lives under `~/.roboclaw-docker/instances/<instance>/`
+- `scripts/docker/build-image.sh` builds an instance image with host networking and automatic proxy export when a local proxy is detected
+- `scripts/docker/bootstrap-instance.sh` seeds an instance from the host `config.json` once, then initializes an isolated workspace
+- `scripts/docker/start-dev.sh` and `scripts/docker/exec-dev.sh` manage a long-lived development container
+- `scripts/docker/run-task.sh` runs one-off RoboClaw commands in an isolated task container
+
+See `docs/docker-workflow.md` for usage examples.

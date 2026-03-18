@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from roboclaw.config.loader import get_config_path
 from roboclaw.utils.helpers import ensure_dir
+
+WORKSPACE_PATH_ENV = "ROBOCLAW_WORKSPACE_PATH"
+_current_workspace_path: Path | None = None
+
+
+def set_workspace_path(path: Path | None) -> None:
+    """Set the active runtime workspace path override."""
+    global _current_workspace_path
+    _current_workspace_path = path
 
 
 def get_data_dir() -> Path:
@@ -36,7 +46,15 @@ def get_logs_dir() -> Path:
 
 def get_workspace_path(workspace: str | None = None) -> Path:
     """Resolve and ensure the agent workspace path."""
-    path = Path(workspace).expanduser() if workspace else Path.home() / ".roboclaw" / "workspace"
+    env_path = os.environ.get(WORKSPACE_PATH_ENV)
+    if _current_workspace_path is not None:
+        path = _current_workspace_path.expanduser()
+    elif env_path:
+        path = Path(env_path).expanduser()
+    elif workspace:
+        path = Path(workspace).expanduser()
+    else:
+        path = Path.home() / ".roboclaw" / "workspace"
     return ensure_dir(path)
 
 

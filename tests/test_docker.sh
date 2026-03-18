@@ -2,19 +2,21 @@
 set -euo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
-IMAGE_NAME="roboclaw-test"
+INSTANCE_NAME="${INSTANCE_NAME:-docker-test}"
+SCRIPT_DIR="$(pwd)/scripts/docker"
+# shellcheck source=../scripts/docker/common.sh
+source "${SCRIPT_DIR}/common.sh"
 
 echo "=== Building Docker image ==="
-docker build -t "$IMAGE_NAME" .
+"${SCRIPT_DIR}/build-image.sh" "$INSTANCE_NAME"
 
 echo ""
-echo "=== Running 'roboclaw onboard' ==="
-docker run --name roboclaw-test-run "$IMAGE_NAME" onboard
+echo "=== Bootstrapping instance ==="
+"${SCRIPT_DIR}/bootstrap-instance.sh" "$INSTANCE_NAME"
 
 echo ""
 echo "=== Running 'roboclaw status' ==="
-STATUS_OUTPUT=$(docker commit roboclaw-test-run roboclaw-test-onboarded > /dev/null && \
-    docker run --rm roboclaw-test-onboarded status 2>&1) || true
+STATUS_OUTPUT=$("${SCRIPT_DIR}/run-task.sh" "$INSTANCE_NAME" status 2>&1) || true
 
 echo "$STATUS_OUTPUT"
 
@@ -34,10 +36,6 @@ check() {
 check "RoboClaw Status"
 check "Config:"
 check "Workspace:"
-check "Model:"
-check "OpenRouter API:"
-check "Anthropic API:"
-check "OpenAI API:"
 
 echo ""
 if $PASS; then
@@ -50,7 +48,7 @@ fi
 # Cleanup
 echo ""
 echo "=== Cleanup ==="
-docker rm -f roboclaw-test-run 2>/dev/null || true
-docker rmi -f roboclaw-test-onboarded 2>/dev/null || true
-docker rmi -f "$IMAGE_NAME" 2>/dev/null || true
+docker rm -f "$(dev_container_name "$INSTANCE_NAME")" 2>/dev/null || true
+docker rmi -f "$(image_ref "$INSTANCE_NAME")" 2>/dev/null || true
+rm -rf "$(instance_dir "$INSTANCE_NAME")"
 echo "Done."
