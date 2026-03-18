@@ -7,6 +7,7 @@ source "${SCRIPT_DIR}/common.sh"
 
 INSTANCE="${1:-}"
 require_instance "${INSTANCE}"
+require_clean_git
 configure_proxy_env
 
 build_args=()

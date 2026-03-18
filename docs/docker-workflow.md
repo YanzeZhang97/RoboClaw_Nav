@@ -17,6 +17,10 @@ Build an image for one instance:
 ./scripts/docker/build-image.sh devbox
 ```
 
+The build only runs when the Git worktree is clean. Image tags include the
+instance name and the current short commit hash, for example
+`roboclaw:devbox-10c41db`.
+
 Create or refresh the isolated instance state:
 
 ```bash

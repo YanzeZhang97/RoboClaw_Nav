@@ -23,7 +23,17 @@ instance_dir() {
 
 image_ref() {
   local instance="${1}"
-  printf 'roboclaw:%s\n' "${instance}"
+  printf 'roboclaw:%s-%s\n' "${instance}" "$(current_commit_short)"
+}
+
+current_commit_short() {
+  git -C "${REPO_ROOT}" rev-parse --short HEAD
+}
+
+require_clean_git() {
+  if [ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]; then
+    die "git worktree is dirty; commit or stash changes before building the Docker image"
+  fi
 }
 
 compose_project() {
