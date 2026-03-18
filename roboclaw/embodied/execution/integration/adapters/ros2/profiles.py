@@ -118,7 +118,7 @@ class Ros2EmbodimentProfile:
         if not self.stage1_bridge_module or not device.strip():
             return None
         command = [
-            f"/usr/bin/python3 -m {self.stage1_bridge_module}",
+            f"python3 -m {self.stage1_bridge_module}",
             f"--namespace {shlex.quote(namespace)}",
             f"--profile-id {shlex.quote(self.id)}",
             f"--robot-id {shlex.quote(robot_id)}",
