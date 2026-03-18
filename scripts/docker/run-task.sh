@@ -52,6 +52,8 @@ if [ -n "${OAUTH_CLI_KIT_AUTH_DIR}" ]; then
   DOCKER_ARGS+=(-v "${OAUTH_CLI_KIT_AUTH_DIR}:/roboclaw-instance/home/.local/share/oauth-cli-kit/auth")
 fi
 
+append_hardware_device_args DOCKER_ARGS
+
 docker run "${DOCKER_ARGS[@]}" \
   "$(image_ref "${INSTANCE}" "${PROFILE}")" \
   "$@"

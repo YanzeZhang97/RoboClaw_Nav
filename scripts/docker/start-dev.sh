@@ -51,6 +51,8 @@ if [ -n "${OAUTH_CLI_KIT_AUTH_DIR}" ]; then
   DOCKER_ARGS+=(-v "${OAUTH_CLI_KIT_AUTH_DIR}:/roboclaw-instance/home/.local/share/oauth-cli-kit/auth")
 fi
 
+append_hardware_device_args DOCKER_ARGS
+
 if docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
   CURRENT_IMAGE_ID="$(docker container inspect --format '{{.Image}}' "${CONTAINER_NAME}")"
   if [ "${CURRENT_IMAGE_ID}" != "${TARGET_IMAGE_ID}" ]; then

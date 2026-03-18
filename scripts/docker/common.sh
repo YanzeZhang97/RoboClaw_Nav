@@ -262,6 +262,42 @@ prepare_auth_mounts() {
   fi
 }
 
+host_serial_devices() {
+  local device
+  for device in /dev/ttyACM* /dev/ttyUSB*; do
+    if [ -e "${device}" ]; then
+      printf '%s\n' "${device}"
+    fi
+  done
+}
+
+host_serial_symlink_dir() {
+  if [ -d /dev/serial/by-id ]; then
+    printf '%s\n' "/dev/serial/by-id"
+  fi
+}
+
+append_hardware_device_args() {
+  local -n docker_args_ref="$1"
+  local seen_group_ids=" "
+  local device group_id serial_symlink_dir
+
+  while IFS= read -r device; do
+    [ -n "${device}" ] || continue
+    docker_args_ref+=(--device "${device}:${device}")
+    group_id="$(stat -c '%g' "${device}")"
+    if [[ "${seen_group_ids}" != *" ${group_id} "* ]]; then
+      docker_args_ref+=(--group-add "${group_id}")
+      seen_group_ids+="$(printf '%s ' "${group_id}")"
+    fi
+  done < <(host_serial_devices || true)
+
+  serial_symlink_dir="$(host_serial_symlink_dir || true)"
+  if [ -n "${serial_symlink_dir}" ]; then
+    docker_args_ref+=(-v "${serial_symlink_dir}:${serial_symlink_dir}:ro")
+  fi
+}
+
 compose_cmd() {
   local instance="${1}"
   local profile
