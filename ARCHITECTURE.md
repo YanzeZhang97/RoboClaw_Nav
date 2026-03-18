@@ -293,9 +293,9 @@ roboclaw/embodied/
 
 - [README.md](/Users/elvin/Workspace/Project/embodied_ai/claw/RoboClaw/README.md)
   对外介绍项目方向、当前目标、核心路径
-- [embodiment-ros2-architecture.md](/Users/elvin/Workspace/Project/embodied_ai/claw/RoboClaw/embodiment-ros2-architecture.md)
+- [ARCHITECTURE.md](/Users/elvin/Workspace/Project/embodied_ai/claw/RoboClaw/ARCHITECTURE.md)
   介绍当前具身框架是什么、为什么这样分层、第一版图怎么跑
-- [roboclaw-installation-guide.md](/Users/elvin/Workspace/Project/embodied_ai/claw/RoboClaw/roboclaw-installation-guide.md)
+- [INSTALLATION.md](/Users/elvin/Workspace/Project/embodied_ai/claw/RoboClaw/INSTALLATION.md)
   面向第一次实际跑 RoboClaw 的 checklist
 - [roboclaw/embodied/README.md](/Users/elvin/Workspace/Project/embodied_ai/claw/RoboClaw/roboclaw/embodied/README.md)
   介绍代码目录边界

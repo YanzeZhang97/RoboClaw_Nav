@@ -76,8 +76,8 @@ Use the documents below for detailed context and implementation detail.
 更详细的上下文和实现细节应以下列文档为准。
 
 - [README.md](README.md)
-- [embodiment-ros2-architecture.md](embodiment-ros2-architecture.md)
-- [roboclaw-installation-guide.md](roboclaw-installation-guide.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [INSTALLATION.md](INSTALLATION.md)
 - [roboclaw/embodied/README.md](roboclaw/embodied/README.md)
 
 This file should stay shorter and more stable than those documents.

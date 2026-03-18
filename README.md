@@ -46,8 +46,8 @@ Right now, we are mainly working on:
 
 Key documents:
 
-- [Current embodied framework](./embodiment-ros2-architecture.md)
-- [Installation guide](./roboclaw-installation-guide.md)
+- [Current embodied framework](./ARCHITECTURE.md)
+- [Installation guide](./INSTALLATION.md)
 - [ROS2 install playbook for RoboClaw](./roboclaw/templates/embodied/guides/ROS2_INSTALL.md)
 
 The direction is clear, and we will continue making the process public as we move forward.
@@ -60,7 +60,7 @@ If you like using AI, you can simply ask your coding assistant:
 Help me install RoboClaw from https://github.com/MINT-SJTU/RoboClaw
 ```
 
-If you prefer a manual step-by-step setup, follow the [installation guide](./roboclaw-installation-guide.md).
+If you prefer a manual step-by-step setup, follow the [installation guide](./INSTALLATION.md).
 
 ### Conda
 
