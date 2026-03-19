@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -43,6 +44,21 @@ class ProcedureExecutionResult:
     details: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class So101CalibrationFlow:
+    """One in-memory calibration interaction for a setup runtime."""
+
+    monitor: Any
+    calibration_path: Path
+    phase: str
+    interval_s: float
+    heartbeat_s: float
+    sample_limit: int | None
+    stop_event: asyncio.Event | None = None
+    task: asyncio.Task[None] | None = None
+    last_error: str | None = None
+
+
 class ProcedureExecutor:
     """Execute a small control-surface subset of embodied procedures."""
 
@@ -50,6 +66,7 @@ class ProcedureExecutor:
         self._loader = AdapterLoader(tools)
         self._runtime_manager = runtime_manager
         self._adapters: dict[str, Any] = {}
+        self._so101_calibration_flows: dict[str, So101CalibrationFlow] = {}
 
     def runtime_for(
         self,
@@ -253,7 +270,7 @@ class ProcedureExecutor:
             )
 
         if getattr(context.profile, "robot_id", None) == "so101":
-            return await self._execute_so101_calibration_guide(context, on_progress=on_progress)
+            return await self._prepare_so101_calibration(context)
 
         expected_path = str(calibration_path) if calibration_path is not None else None
         return ProcedureExecutionResult(
@@ -264,6 +281,36 @@ class ProcedureExecutor:
                 + (f" Expected canonical path: `{expected_path}`." if expected_path else "")
                 + " Reply with `calibrate` after the hardware is ready so RoboClaw can walk you through it."
             ),
+        )
+
+    def calibration_phase(self, runtime_id: str) -> str | None:
+        flow = self._so101_calibration_flows.get(runtime_id)
+        if flow is None:
+            return None
+        return flow.phase
+
+    async def advance_calibration(
+        self,
+        context: ExecutionContext,
+        *,
+        on_progress: Any | None = None,
+    ) -> ProcedureExecutionResult:
+        flow = self._so101_calibration_flows.get(context.runtime.id)
+        if flow is None:
+            return ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message="There is no pending calibration interaction for this setup. Reply with `calibrate` first.",
+            )
+        if flow.phase == "await_mid_pose_ack":
+            return await self._start_so101_calibration_stream(context, flow=flow, on_progress=on_progress)
+        if flow.phase == "streaming":
+            return await self._finish_so101_calibration(context, flow=flow)
+        self._cleanup_so101_calibration_flow(context.runtime.id)
+        return ProcedureExecutionResult(
+            procedure=ProcedureKind.CALIBRATE,
+            ok=False,
+            message="The pending calibration interaction is in an unknown state. Reply with `calibrate` to start again.",
         )
 
     def _calibration_path(self, context: ExecutionContext) -> Path | None:
@@ -309,22 +356,29 @@ class ProcedureExecutor:
             raise RuntimeError("No stable `/dev/serial/by-id/...` device is configured for this setup yet.")
         return So101CalibrationMonitor(device_by_id=device_by_id)
 
-    async def _execute_so101_calibration_guide(
+    async def _prepare_so101_calibration(
         self,
         context: ExecutionContext,
-        *,
-        on_progress: Any | None = None,
     ) -> ProcedureExecutionResult:
         calibration_path = self._calibration_path(context)
+        if calibration_path is None:
+            return ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message=f"Setup `{context.setup_id}` does not declare a canonical calibration path.",
+            )
+        existing = self._so101_calibration_flows.get(context.runtime.id)
+        if existing is not None:
+            return self._so101_calibration_phase_message(context, phase=existing.phase, calibration_path=existing.calibration_path)
         try:
             monitor = self._build_so101_calibration_monitor(context)
             monitor.connect()
             monitor.prepare_manual_calibration()
             interval_s, heartbeat_s, sample_limit = self._so101_calibration_stream_settings()
-            stream_result = await self._stream_so101_calibration_view(
-                monitor,
+            self._so101_calibration_flows[context.runtime.id] = So101CalibrationFlow(
+                monitor=monitor,
                 calibration_path=calibration_path,
-                on_progress=on_progress,
+                phase="await_mid_pose_ack",
                 interval_s=interval_s,
                 heartbeat_s=heartbeat_s,
                 sample_limit=sample_limit,
@@ -340,43 +394,12 @@ class ProcedureExecutor:
                     f" {exc}"
                 ),
             )
-        finally:
-            if "monitor" in locals():
-                monitor.disconnect()
-
         context.runtime.status = RuntimeStatus.DISCONNECTED
         context.runtime.last_error = None
-        expected_path = str(calibration_path) if calibration_path is not None else "unknown"
-        if stream_result == "saved":
-            return ProcedureExecutionResult(
-                procedure=ProcedureKind.CALIBRATE,
-                ok=True,
-                message=(
-                    f"SO101 calibration file detected at `{expected_path}`."
-                    " You can retry `connect` or your motion command now."
-                ),
-                details={"calibration_path": expected_path},
-            )
-
-        final_clause = (
-            " Move the arm by hand and keep watching the live values until you save the canonical calibration file."
-        )
-        if sample_limit is not None:
-            final_clause = (
-                " The bounded test stream finished."
-                " Move the arm by hand while watching those live values, then create the canonical calibration file"
-                " before retrying `connect`."
-            )
-        return ProcedureExecutionResult(
-            procedure=ProcedureKind.CALIBRATE,
-            ok=False,
-            message=(
-                f"Live SO101 calibration stream started for setup `{context.setup_id}`."
-                " RoboClaw disabled torque and streamed a LeRobot-style `MIN | POS | MAX` table above."
-                + final_clause
-                + f" Expected canonical path: `{expected_path}`."
-            ),
-            details={"calibration_path": expected_path},
+        return self._so101_calibration_phase_message(
+            context,
+            phase="await_mid_pose_ack",
+            calibration_path=calibration_path,
         )
 
     def _so101_calibration_stream_settings(self) -> tuple[float, float, int | None]:
@@ -386,33 +409,161 @@ class ProcedureExecutor:
         sample_limit = int(raw_limit) if raw_limit else None
         return interval_s, heartbeat_s, sample_limit
 
-    async def _stream_so101_calibration_view(
+    def _so101_calibration_phase_message(
         self,
-        monitor: Any,
+        context: ExecutionContext,
         *,
-        calibration_path: Path | None,
+        phase: str,
+        calibration_path: Path,
+    ) -> ProcedureExecutionResult:
+        expected_path = str(calibration_path)
+        if phase == "await_mid_pose_ack":
+            return ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message=(
+                    f"SO101 calibration is ready for setup `{context.setup_id}`."
+                    " Move the arm to a middle pose first, then press Enter to start live calibration."
+                    f" RoboClaw will save the canonical calibration file to `{expected_path}` when you press Enter again."
+                ),
+                details={"calibration_path": expected_path, "calibration_phase": phase},
+            )
+        if phase == "streaming":
+            return ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message=(
+                    f"SO101 live calibration is already running for setup `{context.setup_id}`."
+                    " Keep moving every joint through its full range of motion, then press Enter again to stop and save."
+                    f" Canonical path: `{expected_path}`."
+                ),
+                details={"calibration_path": expected_path, "calibration_phase": phase},
+            )
+        return ProcedureExecutionResult(
+            procedure=ProcedureKind.CALIBRATE,
+            ok=False,
+            message="SO101 calibration is in an unknown state. Reply with `calibrate` to restart it.",
+            details={"calibration_phase": phase},
+        )
+
+    async def _start_so101_calibration_stream(
+        self,
+        context: ExecutionContext,
+        *,
+        flow: So101CalibrationFlow,
         on_progress: Any | None,
-        interval_s: float,
-        heartbeat_s: float,
-        sample_limit: int | None,
-    ) -> str:
+    ) -> ProcedureExecutionResult:
+        try:
+            mid_pose = flow.monitor.capture_mid_pose()
+            flow.monitor.apply_half_turn_homings(mid_pose)
+            flow.monitor.start_observation()
+            flow.stop_event = asyncio.Event()
+            flow.phase = "streaming"
+            flow.task = asyncio.create_task(self._run_so101_calibration_stream(flow, on_progress=on_progress))
+        except Exception as exc:
+            self._cleanup_so101_calibration_flow(context.runtime.id)
+            context.runtime.status = RuntimeStatus.ERROR
+            context.runtime.last_error = str(exc)
+            return ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message=f"RoboClaw could not start live SO101 calibration. {exc}",
+            )
+
+        context.runtime.status = RuntimeStatus.DISCONNECTED
+        context.runtime.last_error = None
+        return ProcedureExecutionResult(
+            procedure=ProcedureKind.CALIBRATE,
+            ok=False,
+            message=(
+                f"SO101 live calibration started for setup `{context.setup_id}`."
+                " RoboClaw is now streaming a LeRobot-style `MIN | POS | MAX` table above."
+                " Move every joint through its full range of motion, then press Enter again to stop and save."
+                f" Canonical path: `{flow.calibration_path}`."
+            ),
+            details={"calibration_path": str(flow.calibration_path), "calibration_phase": "streaming"},
+        )
+
+    async def _finish_so101_calibration(
+        self,
+        context: ExecutionContext,
+        *,
+        flow: So101CalibrationFlow,
+    ) -> ProcedureExecutionResult:
+        try:
+            if flow.stop_event is not None:
+                flow.stop_event.set()
+            if flow.task is not None:
+                await flow.task
+            if flow.last_error:
+                raise RuntimeError(flow.last_error)
+            flow.calibration_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = flow.monitor.export_calibration_payload()
+            flow.calibration_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        except Exception as exc:
+            self._cleanup_so101_calibration_flow(context.runtime.id)
+            context.runtime.status = RuntimeStatus.ERROR
+            context.runtime.last_error = str(exc)
+            return ProcedureExecutionResult(
+                procedure=ProcedureKind.CALIBRATE,
+                ok=False,
+                message=f"RoboClaw could not save the SO101 calibration file. {exc}",
+            )
+
+        self._cleanup_so101_calibration_flow(context.runtime.id)
+        context.runtime.status = RuntimeStatus.DISCONNECTED
+        context.runtime.last_error = None
+        return ProcedureExecutionResult(
+            procedure=ProcedureKind.CALIBRATE,
+            ok=True,
+            message=(
+                f"Saved SO101 calibration for setup `{context.setup_id}` to `{flow.calibration_path}`."
+                " You can retry `connect` or your motion command now."
+            ),
+            details={"calibration_path": str(flow.calibration_path), "calibration_phase": "completed"},
+        )
+
+    async def _run_so101_calibration_stream(
+        self,
+        flow: So101CalibrationFlow,
+        *,
+        on_progress: Any | None,
+    ) -> None:
         sample_idx = 0
         last_payload = ""
         last_emit = 0.0
-        while True:
-            sample_idx += 1
-            snapshot = monitor.snapshot()
-            payload = self._format_so101_calibration_snapshot(snapshot, sample_idx=sample_idx)
-            now = asyncio.get_running_loop().time()
-            if on_progress is not None and (payload != last_payload or (now - last_emit) >= heartbeat_s):
-                await on_progress(payload)
-                last_emit = now
-                last_payload = payload
-            if calibration_path is not None and calibration_path.exists():
-                return "saved"
-            if sample_limit is not None and sample_idx >= sample_limit:
-                return "sample_limit"
-            await asyncio.sleep(interval_s)
+        try:
+            while True:
+                if flow.stop_event is not None and flow.stop_event.is_set():
+                    return
+                sample_idx += 1
+                snapshot = flow.monitor.snapshot_observed()
+                payload = self._format_so101_calibration_snapshot(snapshot, sample_idx=sample_idx)
+                now = asyncio.get_running_loop().time()
+                if on_progress is not None and (payload != last_payload or (now - last_emit) >= flow.heartbeat_s):
+                    await on_progress(payload)
+                    last_emit = now
+                    last_payload = payload
+                if flow.sample_limit is not None and sample_idx >= flow.sample_limit:
+                    return
+                await asyncio.sleep(flow.interval_s)
+        except Exception as exc:
+            flow.last_error = str(exc)
+            if on_progress is not None:
+                await on_progress(f"SO101 calibration stream stopped: {exc}")
+
+    def _cleanup_so101_calibration_flow(self, runtime_id: str) -> None:
+        flow = self._so101_calibration_flows.pop(runtime_id, None)
+        if flow is None:
+            return
+        if flow.stop_event is not None:
+            flow.stop_event.set()
+        if flow.task is not None:
+            flow.task.cancel()
+        try:
+            flow.monitor.disconnect()
+        except Exception:
+            pass
 
     @staticmethod
     def _format_so101_calibration_snapshot(snapshot: Any, *, sample_idx: int) -> str:

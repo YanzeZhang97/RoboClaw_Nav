@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -12,7 +14,8 @@ from roboclaw.agent.tools.registry import ToolRegistry
 from roboclaw.bus.queue import MessageBus
 from roboclaw.config.loader import CONFIG_PATH_ENV
 from roboclaw.embodied.execution.integration.transports.ros2 import canonical_ros2_namespace
-from roboclaw.embodied.execution.orchestration.runtime.executor import ProcedureExecutor
+from roboclaw.embodied.execution.orchestration.procedures.model import ProcedureKind
+from roboclaw.embodied.execution.orchestration.runtime.executor import ProcedureExecutionResult, ProcedureExecutor
 from roboclaw.embodied.execution.orchestration.runtime.manager import RuntimeManager
 from roboclaw.embodied.execution.orchestration.runtime.model import RuntimeStatus
 from roboclaw.embodied.onboarding import (
@@ -581,20 +584,44 @@ async def test_follow_on_move_skips_calibration_recheck_once_runtime_is_ready(tm
 
 
 @pytest.mark.asyncio
-async def test_calibrate_streams_live_so101_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_calibrate_prompts_for_mid_pose_then_saves_on_second_enter(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     executor, context, calibration_path = _execution_context(tmp_path, calibration_exists=False)
     progress: list[str] = []
 
     class FakeMonitor:
+        def __init__(self) -> None:
+            self.snapshot_calls = 0
+
         def connect(self) -> None:
             return None
 
         def prepare_manual_calibration(self) -> None:
             return None
 
-        def snapshot(self):
+        def capture_mid_pose(self) -> dict[str, int]:
+            return {
+                "shoulder_pan": 2050,
+                "shoulder_lift": 2051,
+                "elbow_flex": 2052,
+                "wrist_flex": 2053,
+                "wrist_roll": 2054,
+                "gripper": 2055,
+            }
+
+        def apply_half_turn_homings(self, mid_pose_raw: dict[str, int]) -> dict[str, int]:
+            return {joint_name: raw - 2047 for joint_name, raw in mid_pose_raw.items()}
+
+        def start_observation(self):
+            return self.snapshot_observed()
+
+        def snapshot_observed(self):
+            self.snapshot_calls += 1
             rows = (
                 SimpleNamespace(joint_name="shoulder_pan", servo_id=1, range_min_raw=120, position_raw=512, range_max_raw=980),
+                SimpleNamespace(joint_name="shoulder_lift", servo_id=2, range_min_raw=220, position_raw=612, range_max_raw=1080),
+                SimpleNamespace(joint_name="elbow_flex", servo_id=3, range_min_raw=320, position_raw=712, range_max_raw=1180),
+                SimpleNamespace(joint_name="wrist_flex", servo_id=4, range_min_raw=420, position_raw=812, range_max_raw=1280),
+                SimpleNamespace(joint_name="wrist_roll", servo_id=5, range_min_raw=520, position_raw=912, range_max_raw=1380),
                 SimpleNamespace(joint_name="gripper", servo_id=6, range_min_raw=1900, position_raw=2100, range_max_raw=3600),
             )
             return SimpleNamespace(
@@ -603,21 +630,73 @@ async def test_calibrate_streams_live_so101_snapshot(tmp_path: Path, monkeypatch
                 rows=rows,
             )
 
+        def export_calibration_payload(self) -> dict[str, dict[str, int]]:
+            return {
+                "shoulder_pan": {"id": 1, "drive_mode": 0, "homing_offset": 3, "range_min": 120, "range_max": 980},
+                "shoulder_lift": {"id": 2, "drive_mode": 0, "homing_offset": 4, "range_min": 220, "range_max": 1080},
+                "elbow_flex": {"id": 3, "drive_mode": 0, "homing_offset": 5, "range_min": 320, "range_max": 1180},
+                "wrist_flex": {"id": 4, "drive_mode": 0, "homing_offset": 6, "range_min": 420, "range_max": 1280},
+                "wrist_roll": {"id": 5, "drive_mode": 0, "homing_offset": 7, "range_min": 520, "range_max": 1380},
+                "gripper": {"id": 6, "drive_mode": 0, "homing_offset": 8, "range_min": 1900, "range_max": 3600},
+            }
+
         def disconnect(self) -> None:
             return None
 
-    monkeypatch.setattr(executor, "_build_so101_calibration_monitor", lambda _: FakeMonitor())
-    monkeypatch.setattr(executor, "_so101_calibration_stream_settings", lambda: (0.0, 0.0, 3))
+    fake_monitor = FakeMonitor()
+    monkeypatch.setattr(executor, "_build_so101_calibration_monitor", lambda _: fake_monitor)
+    monkeypatch.setattr(executor, "_so101_calibration_stream_settings", lambda: (0.0, 0.0, None))
 
     async def on_progress(content: str) -> None:
         progress.append(content)
 
-    result = await executor.execute_calibrate(context, on_progress=on_progress)
+    prompt = await executor.execute_calibrate(context, on_progress=on_progress)
+    started = await executor.advance_calibration(context, on_progress=on_progress)
+    await asyncio.sleep(0.01)
+    saved = await executor.advance_calibration(context, on_progress=on_progress)
 
-    assert result.ok is False
-    assert str(calibration_path) in result.message
-    assert "LeRobot-style `MIN | POS | MAX` table" in result.message
-    assert "bounded test stream finished" in result.message
+    assert prompt.ok is False
+    assert "middle pose" in prompt.message
+    assert started.ok is False
+    assert "press Enter again to stop and save" in started.message
+    assert saved.ok is True
+    assert str(calibration_path) in saved.message
+    assert calibration_path.exists()
     assert progress
     assert "SO101 calibration live view frame 1" in progress[0]
     assert "shoulder_pan" in progress[0]
+    assert fake_monitor.snapshot_calls >= 1
+    payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+    assert payload["gripper"]["range_min"] == 1900
+    assert executor.calibration_phase(context.runtime.id) is None
+
+
+@pytest.mark.asyncio
+async def test_pending_calibration_blank_message_advances_without_provider(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_workspace(tmp_path)
+    _write_setup_assets(tmp_path, "so101_setup")
+    loop, provider, _ = _build_loop(tmp_path, _standard_ros2_responses("so101_setup"))
+    session = _seed_session(loop)
+    runtime_id = f"{session.key}:so101_setup"
+    session.metadata["embodied_calibration"] = {
+        "setup_id": "so101_setup",
+        "runtime_id": runtime_id,
+        "phase": "await_mid_pose_ack",
+    }
+    loop.sessions.save(session)
+
+    async def fake_advance(context, on_progress=None):
+        assert context.runtime.id == runtime_id
+        return ProcedureExecutionResult(
+            procedure=ProcedureKind.CALIBRATE,
+            ok=False,
+            message="started live calibration",
+            details={"calibration_phase": "streaming"},
+        )
+
+    monkeypatch.setattr(loop.embodied_execution.executor, "advance_calibration", fake_advance)
+
+    response = await loop.process_direct("", session_key=session.key)
+
+    assert provider.chat_calls == 0
+    assert response == "started live calibration"

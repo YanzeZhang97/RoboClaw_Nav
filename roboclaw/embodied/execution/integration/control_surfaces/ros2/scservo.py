@@ -146,6 +146,15 @@ class ScsServoBus:
         )
         self._raise_if_failed(result, error, f"write goal position for servo {servo_id}")
 
+    def write_word(self, servo_id: int, address: int, value: int) -> None:
+        result, error = self.packet_handler.write2ByteTxRx(
+            self.port_handler,
+            servo_id,
+            address,
+            int(value) & 0xFFFF,
+        )
+        self._raise_if_failed(result, error, f"write word 0x{address:02x} for servo {servo_id}")
+
     def move_to_position(
         self,
         servo_id: int,

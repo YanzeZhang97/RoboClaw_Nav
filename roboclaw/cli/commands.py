@@ -50,6 +50,15 @@ _PROMPT_SESSION: PromptSession | None = None
 _SAVED_TERM_ATTRS = None  # original termios settings, restored on exit
 
 
+def _session_accepts_blank_input(session: object | None) -> bool:
+    if session is None or not hasattr(session, "metadata"):
+        return False
+    raw = getattr(session, "metadata", {}).get("embodied_calibration")
+    if not isinstance(raw, dict):
+        return False
+    return str(raw.get("phase") or "").strip() in {"await_mid_pose_ack", "streaming"}
+
+
 def _flush_pending_tty_input() -> None:
     """Drop unread keypresses typed while the model was generating output."""
     try:
@@ -621,7 +630,8 @@ def agent(
                         _flush_pending_tty_input()
                         user_input = await _read_interactive_input_async()
                         command = user_input.strip()
-                        if not command:
+                        current_session = agent_loop.sessions.get_or_create(session_id)
+                        if not command and not _session_accepts_blank_input(current_session):
                             continue
 
                         if _is_exit_command(command):
