@@ -102,8 +102,27 @@ class Ros2EmbodimentProfile:
     default_reset_mode: str = "home"
     auto_probe_serial: bool = False
     control_bridge_module: str | None = None
+    calibration_robot_name: str | None = None
     control_default_calibration_id: str | None = None
     notes: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def requires_calibration(self) -> bool:
+        return bool(self.calibration_robot_name and self.control_default_calibration_id)
+
+    def canonical_calibration_path(self) -> Path | None:
+        if not self.requires_calibration:
+            return None
+        from roboclaw.config.paths import get_robot_calibration_file
+
+        return get_robot_calibration_file(self.calibration_robot_name or self.robot_id, self.control_default_calibration_id or "")
+
+    def ensure_canonical_calibration(self) -> Path | None:
+        if not self.requires_calibration:
+            return None
+        from roboclaw.config.paths import ensure_robot_calibration_file
+
+        return ensure_robot_calibration_file(self.calibration_robot_name or self.robot_id, self.control_default_calibration_id or "")
 
     def resolve_primitive_alias(self, content: str) -> PrimitiveAliasResolution | None:
         normalized = _normalize_text(content)
@@ -223,6 +242,7 @@ SO101_ROS2_PROFILE = Ros2EmbodimentProfile(
     ),
     auto_probe_serial=True,
     control_bridge_module="roboclaw.embodied.execution.integration.bridges.ros2.control_bridge",
+    calibration_robot_name="so101",
     control_default_calibration_id="so101_real",
     notes=(
         "Control bridge profile for a ROS2-backed SO101 setup.",

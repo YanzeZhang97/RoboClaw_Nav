@@ -4,6 +4,7 @@ from roboclaw.config.loader import CONFIG_PATH_ENV, get_config_path
 from roboclaw.config.paths import (
     WORKSPACE_PATH_ENV,
     get_calibration_dir,
+    get_robot_calibration_file,
     get_calibration_root,
     get_bridge_install_dir,
     get_cli_history_path,
@@ -42,6 +43,7 @@ def test_calibration_dirs_follow_active_config_root(monkeypatch, tmp_path: Path)
 
     assert get_calibration_root() == config_file.parent / "calibration"
     assert get_calibration_dir("so101") == config_file.parent / "calibration" / "so101"
+    assert get_robot_calibration_file("so101", "so101_real") == config_file.parent / "calibration" / "so101" / "so101_real.json"
 
 
 def test_shared_and_legacy_paths_remain_global() -> None:

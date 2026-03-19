@@ -399,6 +399,24 @@ class OnboardingController:
                         "\nPlease expose a stable `/dev/serial/by-id/...` mapping for the SO101 controller, then reply again."
                     ),
                 }
+            if primary_profile is not None and primary_profile.requires_calibration:
+                calibration_path = str(state.detected_facts.get("calibration_path") or "").strip()
+                if not calibration_path:
+                    next_state = replace(
+                        state,
+                        stage=SetupStage.PROBE_LOCAL_ENVIRONMENT,
+                        status=SetupStatus.BOOTSTRAPPING,
+                        missing_facts=["calibration_file"],
+                    )
+                    expected_path = primary_profile.canonical_calibration_path()
+                    return {
+                        "state": next_state,
+                        "content": (
+                            f"This `{primary_profile.robot_id}` profile requires framework-managed calibration before execution."
+                            f"\nExpected canonical path: `{expected_path}`."
+                            "\nPlace the calibration file there or make a compatible legacy calibration available, then reply again."
+                        ),
+                    }
             if (
                 state.detected_facts.get("ros2_available") is not True
                 and state.detected_facts.get("ros2_installed_distros")
@@ -584,6 +602,14 @@ class OnboardingController:
             else:
                 facts.pop("serial_device_by_id", None)
                 facts["serial_device_unstable"] = True
+        if primary_profile is not None and primary_profile.requires_calibration:
+            calibration_path = primary_profile.ensure_canonical_calibration()
+            if calibration_path is not None and calibration_path.exists():
+                facts["calibration_path"] = str(calibration_path)
+                facts.pop("calibration_missing", None)
+            else:
+                facts.pop("calibration_path", None)
+                facts["calibration_missing"] = True
         if force_ros2_probe or "ros2_available" not in facts:
             probe = await self._run_tool(
                 "exec",
@@ -631,6 +657,8 @@ class OnboardingController:
             notes = self._extend_unique(notes, f"probe:serial={facts['serial_device_by_id']}")
         if facts.get("serial_probe_error"):
             notes = self._extend_unique(notes, f"probe:serial_check={facts['serial_probe_error']}")
+        if facts.get("calibration_path"):
+            notes = self._extend_unique(notes, f"probe:calibration={facts['calibration_path']}")
         if facts.get("ros2_distro"):
             notes = self._extend_unique(notes, f"probe:ros2={facts['ros2_distro']}")
         return replace(state, stage=SetupStage.PROBE_LOCAL_ENVIRONMENT, detected_facts=facts, notes=notes)
@@ -888,6 +916,8 @@ class OnboardingController:
             f"- serial_device_unstable: `{facts.get('serial_device_unstable', 'unknown')}`",
             f"- serial_device_unresponsive: `{facts.get('serial_device_unresponsive', 'unknown')}`",
             f"- serial_probe_error: `{facts.get('serial_probe_error', 'unknown')}`",
+            f"- calibration_path: `{facts.get('calibration_path', 'unknown')}`",
+            f"- calibration_missing: `{facts.get('calibration_missing', 'unknown')}`",
             f"- ros2_available: `{facts.get('ros2_available', 'unknown')}`",
             f"- ros2_distro: `{facts.get('ros2_distro', 'unknown')}`",
             f"- host_pretty_name: `{facts.get('host_pretty_name', 'unknown')}`",

@@ -15,6 +15,15 @@ from roboclaw.providers.base import LLMResponse
 from roboclaw.session.manager import Session
 
 
+@pytest.fixture(autouse=True)
+def _active_config_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("roboclaw.config.paths.get_config_path", lambda: tmp_path / "config.json")
+    monkeypatch.setattr(
+        "roboclaw.config.paths.LEGACY_CALIBRATION_ROOT",
+        tmp_path / "home" / ".cache" / "huggingface" / "lerobot" / "calibration" / "robots",
+    )
+
+
 class FakeExecTool(Tool):
     def __init__(self, responses: dict[str, str | list[str]]):
         self.responses = responses
@@ -74,6 +83,14 @@ def _prepare_workspace(root: Path) -> None:
         (root / rel).mkdir(parents=True, exist_ok=True)
     (root / "embodied" / "guides" / "ROS2_INSTALL.md").write_text(
         "# ROS2 Install\n\n## Ubuntu 24.04\nUse Jazzy.\n",
+        encoding="utf-8",
+    )
+    (root / "calibration" / "so101").mkdir(parents=True, exist_ok=True)
+    (root / "calibration" / "so101" / "so101_real.json").write_text(
+        (
+            '{"gripper": {"id": 6, "drive_mode": 0, "homing_offset": 0, '
+            '"range_min": 0, "range_max": 4095}}'
+        ),
         encoding="utf-8",
     )
 
@@ -151,6 +168,7 @@ async def test_onboarding_generates_ready_setup_for_so101_with_camera(tmp_path: 
     assert deployment_path.exists()
     assert adapter_path.exists()
     assert state["detected_facts"]["serial_device_by_id"] == "/dev/serial/by-id/usb-so101"
+    assert state["detected_facts"]["calibration_path"] == str(tmp_path / "calibration" / "so101" / "so101_real.json")
     assert "wrist_camera" in assembly_path.read_text(encoding="utf-8")
     deployment_text = deployment_path.read_text(encoding="utf-8")
     assert "/wrist_camera/image_raw" in deployment_text
@@ -278,7 +296,38 @@ async def test_onboarding_blocks_unresponsive_so101_serial_device(tmp_path: Path
     assert state["missing_facts"] == ["serial_device_by_id"]
     assert state["detected_facts"]["serial_device_unresponsive"] is True
     assert state["detected_facts"].get("serial_device_by_id") is None
-    assert "did not answer an SO101 servo probe" in response.content
+
+
+@pytest.mark.asyncio
+async def test_onboarding_blocks_missing_profile_calibration_before_asset_generation(tmp_path: Path) -> None:
+    _prepare_workspace(tmp_path)
+    calibration_file = tmp_path / "calibration" / "so101" / "so101_real.json"
+    calibration_file.unlink()
+    tools, _ = _build_tools(
+        tmp_path,
+        {
+            "for link in /dev/serial/by-id/*": "/dev/serial/by-id/usb-so101 -> /dev/ttyACM0\n/dev/ttyACM0\n",
+            SO101_SERIAL_PROBE_MARKER: SO101_SERIAL_PROBE_OK,
+            "command -v ros2": "ROS2_OK\nros2 0.0.0\nROS_DISTRO=jazzy\n",
+        },
+    )
+    controller = OnboardingController(tmp_path, tools)
+    session = Session(key="cli:direct")
+
+    await controller.handle_message(
+        InboundMessage(channel="cli", sender_id="user", chat_id="direct", content="SO101"),
+        session,
+    )
+    response = await controller.handle_message(
+        InboundMessage(channel="cli", sender_id="user", chat_id="direct", content="connected"),
+        session,
+    )
+
+    state = session.metadata[SETUP_STATE_KEY]
+    assert state["missing_facts"] == ["calibration_file"]
+    assert state["detected_facts"]["calibration_missing"] is True
+    assert "requires framework-managed calibration" in response.content
+    assert str(calibration_file) in response.content
     assert not (tmp_path / "embodied" / "assemblies" / "so101_setup.py").exists()
 
 

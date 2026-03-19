@@ -39,18 +39,6 @@ driver module that Docker uses. If you still have an older compatible
 calibration cache on the host, the first real SO101 control run will import it
 into `~/.roboclaw/calibration/so101/`.
 
-To seed the canonical native calibration path explicitly, run:
-
-```bash
-./scripts/prepare-native-calibration.sh --robot so101 --calibration-id so101_real
-```
-
-If you already have a calibration file to import, pass it directly:
-
-```bash
-./scripts/prepare-native-calibration.sh --robot so101 --calibration-id so101_real --source /path/to/so101_real.json
-```
-
 ## 3. Step 2: Initialize RoboClaw
 
 Run:
@@ -234,12 +222,9 @@ For a bounded native SO101 acceptance run on the host, use:
 ./tests/test_native_so101_acceptance.sh
 ```
 
-If the host does not already have a canonical RoboClaw calibration and you need
-to import a specific calibration file first, pass it as:
-
-```bash
-CALIBRATION_SOURCE=/path/to/so101_real.json ./tests/test_native_so101_acceptance.sh
-```
+If calibration is missing, RoboClaw now reports the canonical path expected by
+the active profile and blocks execution until that framework-managed calibration
+exists.
 
 That helper prepares canonical calibration under `~/.roboclaw/calibration/so101/`,
 checks `roboclaw agent -m "hello"`, and then runs the real-robot flow:

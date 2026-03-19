@@ -8,14 +8,14 @@ SCRIPT_DIR="$(pwd)/scripts"
 SESSION_FILE="${HOME}/.roboclaw/workspace/sessions/$(printf '%s' "${SESSION_ID}" | tr ':' '_').jsonl"
 CALIBRATION_SOURCE="${CALIBRATION_SOURCE:-}"
 
-echo "=== Preparing native canonical calibration ==="
 if [ -n "${CALIBRATION_SOURCE}" ]; then
+  echo "=== Importing explicit native calibration source ==="
   "${SCRIPT_DIR}/prepare-native-calibration.sh" \
     --robot so101 \
     --calibration-id so101_real \
     --source "${CALIBRATION_SOURCE}"
 else
-  "${SCRIPT_DIR}/prepare-native-calibration.sh" --robot so101 --calibration-id so101_real
+  echo "=== Using framework-managed native calibration discovery ==="
 fi
 
 echo "=== Native hello smoke ==="

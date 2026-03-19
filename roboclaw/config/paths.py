@@ -49,6 +49,17 @@ def get_robot_calibration_dir(robot_name: str) -> Path:
     return ensure_dir(get_calibration_root() / robot)
 
 
+def get_robot_calibration_file(robot_name: str, calibration_id: str) -> Path:
+    """Return the canonical calibration file path for one robot family."""
+    robot = robot_name.strip()
+    calibration = calibration_id.strip()
+    if not robot:
+        raise ValueError("robot_name cannot be empty.")
+    if not calibration:
+        raise ValueError("calibration_id cannot be empty.")
+    return get_robot_calibration_dir(robot) / f"{calibration}.json"
+
+
 def _legacy_calibration_dirs(robot_name: str) -> tuple[Path, ...]:
     robot = robot_name.strip().lower()
     return tuple(LEGACY_CALIBRATION_ROOT / name for name in LEGACY_CALIBRATION_ROBOT_DIRS.get(robot, ()))
@@ -66,7 +77,7 @@ def find_legacy_calibration_file(robot_name: str, calibration_id: str) -> Path |
 
 def ensure_robot_calibration_file(robot_name: str, calibration_id: str) -> Path:
     """Ensure the canonical calibration file exists, migrating from legacy cache if needed."""
-    canonical = get_robot_calibration_dir(robot_name) / f"{calibration_id}.json"
+    canonical = get_robot_calibration_file(robot_name, calibration_id)
     if canonical.exists():
         return canonical
 
