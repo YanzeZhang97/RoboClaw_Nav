@@ -57,13 +57,18 @@ Current embodiment coverage is tracked like this:
 
 ## 📦 Installation
 
+RoboClaw supports two user installation paths:
+
+- [Non-Docker Installation](./INSTALLATION.md): install RoboClaw directly on the host Python environment
+- [Docker Installation](./DOCKERINSTALLATION.md): use the remote Linux Docker workflow with isolated instance state
+
 If you like using AI, you can simply ask your coding assistant:
 
 ```text
 Help me install RoboClaw from https://github.com/MINT-SJTU/RoboClaw
 ```
 
-If you prefer a manual step-by-step setup, follow the [installation guide](./INSTALLATION.md).
+If you prefer step-by-step setup, start from either [Non-Docker Installation](./INSTALLATION.md) or [Docker Installation](./DOCKERINSTALLATION.md).
 
 ## 📢 Community Co-Creation
 

@@ -6,8 +6,8 @@ RoboClaw supports two Docker workflows on a remote Linux host:
 - One-shot task containers that run a single RoboClaw command and exit.
 - Matrix runs that build multiple OS profiles and run the same task across each profile from one entrypoint.
 
-All container state lives under `~/.roboclaw-docker/instances/<instance>/`.
-Each instance has its own `config.json`, `workspace/`, and runtime data derived from the config directory.
+All container state lives under `~/.roboclaw-docker/instances/<instance>--<profile>/`.
+Each profile instance has its own `config.json`, `workspace/`, and runtime data derived from the config directory.
 By default, bootstrap copies `~/.roboclaw/config.json` into the instance once, then the container state diverges from the host.
 
 ## Scripts
