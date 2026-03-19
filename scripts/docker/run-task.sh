@@ -27,7 +27,7 @@ if [ "$#" -eq 0 ]; then
   set -- status
 fi
 
-"${SCRIPT_DIR}/bootstrap-instance.sh" --profile "${PROFILE}" "${INSTANCE}"
+bootstrap_instance_if_needed "${INSTANCE}" "${PROFILE}"
 
 DOCKER_ARGS=(
   --rm
@@ -39,14 +39,9 @@ DOCKER_ARGS=(
   -e ROBOCLAW_ROS2_NAMESPACE_PREFIX="$(ros2_namespace_prefix "${INSTANCE}" "${PROFILE}")"
   -e ROBOCLAW_ROS2_CONTROL_PYTHON="/usr/bin/python3"
   -e ROBOCLAW_ROS2_CONTROL_PYTHONPATH="/app:/usr/lib/python3/dist-packages"
-  -e HTTP_PROXY="${HTTP_PROXY:-}"
-  -e HTTPS_PROXY="${HTTPS_PROXY:-}"
-  -e ALL_PROXY="${ALL_PROXY:-}"
-  -e http_proxy="${http_proxy:-}"
-  -e https_proxy="${https_proxy:-}"
-  -e all_proxy="${all_proxy:-}"
   -v "$(instance_dir "${INSTANCE}" "${PROFILE}"):/roboclaw-instance"
 )
+append_proxy_env_args DOCKER_ARGS
 
 if [ -n "${AUTH_PATH}" ]; then
   DOCKER_ARGS+=(-v "${AUTH_PATH}:/roboclaw-instance/home/.codex/auth.json:ro")

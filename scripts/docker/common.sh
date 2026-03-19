@@ -146,6 +146,13 @@ instance_dir() {
   printf '%s/instances/%s\n' "${ROBOCLAW_DOCKER_HOME}" "$(instance_key "${instance}" "${profile}")"
 }
 
+instance_bootstrap_stamp_path() {
+  local instance="${1}"
+  local profile
+  profile="$(docker_profile "${2:-}")"
+  printf '%s/.bootstrap-%s\n' "$(instance_dir "${instance}" "${profile}")" "$(current_commit_short)"
+}
+
 image_ref() {
   local instance="${1}"
   local profile
@@ -177,6 +184,25 @@ compose_project() {
   printf 'roboclaw-%s-%s\n' "${instance}" "${profile}"
 }
 
+collect_proxy_build_args() {
+  local -n build_args_ref="$1"
+  local key value
+  for key in HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; do
+    value="${!key:-}"
+    if [ -n "${value}" ]; then
+      build_args_ref+=(--build-arg "${key}=${value}")
+    fi
+  done
+}
+
+append_proxy_env_args() {
+  local -n docker_args_ref="$1"
+  local key
+  for key in HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; do
+    docker_args_ref+=(-e "${key}=${!key:-}")
+  done
+}
+
 dev_container_name() {
   local instance="${1}"
   local profile
@@ -185,50 +211,165 @@ dev_container_name() {
 }
 
 find_proxy_port() {
-  local ss_output line
-  ss_output="$(ss -ltnpH 2>/dev/null || true)"
-  if [ -z "${ss_output}" ]; then
-    return 1
-  fi
+  local proxy_spec
+  proxy_spec="$(find_proxy_endpoint || true)"
+  [ -n "${proxy_spec}" ] || return 1
+  printf '%s\n' "${proxy_spec##*:}"
+}
 
-  if printf '%s\n' "${ss_output}" | awk '/verge-mihomo/ && $4 ~ /127\.0\.0\.1:7897$/ { print "7897"; exit }' | grep -q .; then
-    printf '7897\n'
+infer_proxy_scheme_for_port() {
+  local port="${1:-}"
+  case "${port}" in
+    7891|7898|7899)
+      printf '%s\n' "socks5"
+      ;;
+    *)
+      printf '%s\n' "http"
+      ;;
+  esac
+}
+
+_known_proxy_process_regex() {
+  printf '%s\n' 'verge-mihomo|clash|mihomo|sing-box|xray|v2ray|dae|hysteria'
+}
+
+_find_proxy_endpoint_from_ss_output() {
+  local ss_output="${1:-}"
+  [ -n "${ss_output}" ] || return 1
+
+  local process_pattern port line
+  process_pattern="$(_known_proxy_process_regex)"
+
+  if printf '%s\n' "${ss_output}" | awk '/verge-mihomo/ && $4 ~ /127\.0\.0\.1:7897$/ { print "http:7897"; exit }' | grep -q .; then
+    printf '%s\n' "http:7897"
     return 0
   fi
 
-  local port
   for port in 7897 7890 7891 20170 7895 7898 7899; do
     if printf '%s\n' "${ss_output}" | awk -v port="${port}" '$4 ~ ("127\\.0\\.0\\.1:" port "$") { found=1 } END { exit(found ? 0 : 1) }'; then
-      printf '%s\n' "${port}"
+      printf '%s:%s\n' "$(infer_proxy_scheme_for_port "${port}")" "${port}"
       return 0
     fi
   done
 
-  line="$(printf '%s\n' "${ss_output}" | grep -E '127\.0\.0\.1:.*(verge-mihomo|clash|mihomo|sing-box|xray|v2ray|dae|hysteria)' | head -n 1 || true)"
+  line="$(printf '%s\n' "${ss_output}" | grep -E "127\\.0\\.0\\.1:.*(${process_pattern})" | head -n 1 || true)"
   if [ -n "${line}" ]; then
-    printf '%s\n' "${line}" | awk '{split($4, a, ":"); print a[length(a)]}'
+    port="$(printf '%s\n' "${line}" | sed -E 's/.*127\.0\.0\.1:([0-9]+).*/\1/')"
+    if [ -n "${port}" ]; then
+      printf '%s:%s\n' "$(infer_proxy_scheme_for_port "${port}")" "${port}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+_find_proxy_endpoint_from_lsof_output() {
+  local lsof_output="${1:-}"
+  [ -n "${lsof_output}" ] || return 1
+
+  local process_pattern port line
+  process_pattern="$(_known_proxy_process_regex)"
+
+  if printf '%s\n' "${lsof_output}" | grep -E '^[^[:space:]]*verge-mihomo[^[:space:]]*[[:space:]].*127\.0\.0\.1:7897([[:space:]]|\(|$)' | head -n 1 | grep -q .; then
+    printf '%s\n' "http:7897"
     return 0
+  fi
+
+  for port in 7897 7890 7891 20170 7895 7898 7899; do
+    if printf '%s\n' "${lsof_output}" | grep -E "127\\.0\\.0\\.1:${port}([[:space:]]|\\(|$)" >/dev/null; then
+      printf '%s:%s\n' "$(infer_proxy_scheme_for_port "${port}")" "${port}"
+      return 0
+    fi
+  done
+
+  line="$(printf '%s\n' "${lsof_output}" | grep -E "^[^[:space:]]*(${process_pattern})[^[:space:]]*[[:space:]].*127\\.0\\.0\\.1:" | head -n 1 || true)"
+  if [ -n "${line}" ]; then
+    port="$(printf '%s\n' "${line}" | sed -E 's/.*127\.0\.0\.1:([0-9]+).*/\1/')"
+    if [ -n "${port}" ]; then
+      printf '%s:%s\n' "$(infer_proxy_scheme_for_port "${port}")" "${port}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+_find_proxy_endpoint_from_netstat_output() {
+  local netstat_output="${1:-}"
+  [ -n "${netstat_output}" ] || return 1
+
+  local port
+  for port in 7897 7890 7891 20170 7895 7898 7899; do
+    if printf '%s\n' "${netstat_output}" | grep -Eq "127\\.0\\.0\\.1[.:]${port}[[:space:]].*LISTEN"; then
+      printf '%s:%s\n' "$(infer_proxy_scheme_for_port "${port}")" "${port}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+find_proxy_endpoint() {
+  local ss_output lsof_output netstat_output
+
+  if command -v ss >/dev/null 2>&1; then
+    ss_output="$(ss -ltnpH 2>/dev/null || true)"
+    if _find_proxy_endpoint_from_ss_output "${ss_output}"; then
+      return 0
+    fi
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof_output="$(lsof -nP -iTCP -sTCP:LISTEN 2>/dev/null || true)"
+    if _find_proxy_endpoint_from_lsof_output "${lsof_output}"; then
+      return 0
+    fi
+  fi
+
+  if command -v netstat >/dev/null 2>&1; then
+    netstat_output="$(netstat -an 2>/dev/null || true)"
+    if _find_proxy_endpoint_from_netstat_output "${netstat_output}"; then
+      return 0
+    fi
   fi
 
   return 1
 }
 
 configure_proxy_env() {
-  local proxy_port="${1:-}"
-  if [ -z "${proxy_port}" ]; then
-    proxy_port="$(find_proxy_port || true)"
+  local proxy_spec="${1:-}"
+  local proxy_scheme proxy_port
+  if [ -z "${proxy_spec}" ]; then
+    proxy_spec="$(find_proxy_endpoint || true)"
   fi
-  if [ -z "${proxy_port}" ]; then
+  if [ -z "${proxy_spec}" ]; then
     unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
     return 0
   fi
 
+  if [[ "${proxy_spec}" == *:* ]]; then
+    proxy_scheme="${proxy_spec%%:*}"
+    proxy_port="${proxy_spec##*:}"
+  else
+    proxy_port="${proxy_spec}"
+    proxy_scheme="$(infer_proxy_scheme_for_port "${proxy_port}")"
+  fi
+
   export HTTP_PROXY="http://127.0.0.1:${proxy_port}"
   export HTTPS_PROXY="http://127.0.0.1:${proxy_port}"
-  export ALL_PROXY="socks5://127.0.0.1:${proxy_port}"
+  if [ "${proxy_scheme}" = "socks5" ]; then
+    export ALL_PROXY="socks5://127.0.0.1:${proxy_port}"
+  else
+    unset ALL_PROXY
+  fi
   export http_proxy="${HTTP_PROXY}"
   export https_proxy="${HTTPS_PROXY}"
-  export all_proxy="${ALL_PROXY}"
+  if [ -n "${ALL_PROXY:-}" ]; then
+    export all_proxy="${ALL_PROXY}"
+  else
+    unset all_proxy
+  fi
 }
 
 ensure_image_exists() {
@@ -364,6 +505,49 @@ prepare_auth_mounts() {
   elif [ -n "${codex_auth_path}" ]; then
     rm -rf "${instance_oauth_dir}"
     mkdir -p "${instance_oauth_dir}"
+  fi
+}
+
+instance_bootstrap_needed() {
+  local instance="${1}"
+  local profile
+  profile="$(docker_profile "${2:-}")"
+  local instance_root stamp_path
+  instance_root="$(instance_dir "${instance}" "${profile}")"
+  stamp_path="$(instance_bootstrap_stamp_path "${instance}" "${profile}")"
+
+  if [ "${ROBOCLAW_FORCE_BOOTSTRAP:-0}" = "1" ]; then
+    return 0
+  fi
+  if [ ! -f "${instance_root}/config.json" ]; then
+    return 0
+  fi
+  if [ ! -d "${instance_root}/workspace" ]; then
+    return 0
+  fi
+  if [ ! -f "${instance_root}/workspace/AGENTS.md" ]; then
+    return 0
+  fi
+  [ ! -f "${stamp_path}" ]
+}
+
+mark_instance_bootstrapped() {
+  local instance="${1}"
+  local profile
+  profile="$(docker_profile "${2:-}")"
+  local instance_root stamp_path
+  instance_root="$(instance_dir "${instance}" "${profile}")"
+  stamp_path="$(instance_bootstrap_stamp_path "${instance}" "${profile}")"
+  find "${instance_root}" -maxdepth 1 -type f -name '.bootstrap-*' -delete
+  : > "${stamp_path}"
+}
+
+bootstrap_instance_if_needed() {
+  local instance="${1}"
+  local profile
+  profile="$(docker_profile "${2:-}")"
+  if instance_bootstrap_needed "${instance}" "${profile}"; then
+    "${SCRIPT_DIR}/bootstrap-instance.sh" --profile "${profile}" "${instance}"
   fi
 }
 

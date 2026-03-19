@@ -108,7 +108,7 @@ SO101_SERIAL_PROBE_OK = (
     "ROBOCLAW_SO101_SERIAL_PROBE resolved=/dev/ttyACM0 open=1 baud=1 result=0 error=0 value=2048\n"
     "ROBOCLAW_SO101_SERIAL_OK\n"
 )
-SO101_SERIAL_PROBE_MARKER = "read2ByteTxRx(port, 6, 56)"
+SO101_SERIAL_PROBE_MARKER = "roboclaw.embodied.execution.integration.bridges.ros2.scservo_probe"
 
 
 def test_onboarding_routes_chinese_real_robot_request(tmp_path: Path) -> None:
@@ -128,6 +128,33 @@ def test_onboarding_normalizes_tty_input_back_to_by_id(monkeypatch, tmp_path: Pa
     )
 
     assert controller._normalize_serial_device_by_id("/dev/ttyACM2") == "/dev/serial/by-id/usb-so101"
+
+
+def test_onboarding_manual_serial_input_clears_stale_probe_failure(monkeypatch, tmp_path: Path) -> None:
+    _prepare_workspace(tmp_path)
+    controller = OnboardingController(tmp_path, ToolRegistry())
+    monkeypatch.setattr(
+        "roboclaw.embodied.onboarding.controller.resolve_serial_by_id_path",
+        lambda device: Path("/dev/serial/by-id/usb-so101") if device == "/dev/ttyACM2" else None,
+    )
+    state = SetupOnboardingState(
+        setup_id="so101_setup",
+        intake_slug="so101_setup",
+        assembly_id="so101_setup",
+        deployment_id="so101_setup_real_local",
+        adapter_id="so101_setup_ros2_local",
+        detected_facts={
+            "serial_device_unresponsive": True,
+            "serial_probe_error": "There is no status packet!",
+        },
+    )
+
+    next_state, changed = controller._apply_user_input(state, "use /dev/ttyACM2")
+
+    assert changed is True
+    assert next_state.detected_facts["serial_device_by_id"] == "/dev/serial/by-id/usb-so101"
+    assert "serial_device_unresponsive" not in next_state.detected_facts
+    assert "serial_probe_error" not in next_state.detected_facts
 
 
 @pytest.mark.asyncio

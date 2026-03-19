@@ -27,7 +27,7 @@ if ! docker image inspect "${TARGET_IMAGE}" >/dev/null 2>&1; then
   fi
 fi
 
-"${SCRIPT_DIR}/bootstrap-instance.sh" --profile "${PROFILE}" "${INSTANCE}"
+bootstrap_instance_if_needed "${INSTANCE}" "${PROFILE}"
 CONTAINER_NAME="$(dev_container_name "${INSTANCE}" "${PROFILE}")"
 TARGET_IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${TARGET_IMAGE}")"
 AUTH_PATH="$(host_codex_auth_path || true)"
@@ -49,15 +49,10 @@ DOCKER_ARGS=(
   -e ROBOCLAW_ROS2_CONTROL_PYTHON="/usr/bin/python3"
   -e ROBOCLAW_ROS2_CONTROL_PYTHONPATH="${CONTROL_SOURCE_PYTHONPATH}"
   -e PYTHONPATH="${SOURCE_PYTHONPATH}"
-  -e HTTP_PROXY="${HTTP_PROXY:-}"
-  -e HTTPS_PROXY="${HTTPS_PROXY:-}"
-  -e ALL_PROXY="${ALL_PROXY:-}"
-  -e http_proxy="${http_proxy:-}"
-  -e https_proxy="${https_proxy:-}"
-  -e all_proxy="${all_proxy:-}"
   -v "$(instance_dir "${INSTANCE}" "${PROFILE}"):/roboclaw-instance"
   -v "${REPO_ROOT}:/roboclaw-source"
 )
+append_proxy_env_args DOCKER_ARGS
 
 if [ -n "${AUTH_PATH}" ]; then
   DOCKER_ARGS+=(-v "${AUTH_PATH}:/roboclaw-instance/home/.codex/auth.json:ro")

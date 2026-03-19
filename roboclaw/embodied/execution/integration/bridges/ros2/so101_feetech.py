@@ -83,12 +83,10 @@ class So101FeetechRuntime:
 
         self._resolved_device_path = resolve_active_serial_device_path(self.device_by_id)
         port_handler = scs.PortHandler(str(self._resolved_device_path))
+        port_handler.baudrate = self.baudrate
         _patch_packet_timeout(port_handler, scs)
         if not port_handler.openPort():
             raise RuntimeError(f"Failed to open servo device '{self._resolved_device_path}'.")
-        if not port_handler.setBaudRate(self.baudrate):
-            port_handler.closePort()
-            raise RuntimeError(f"Failed to set baudrate {self.baudrate} on '{self._resolved_device_path}'.")
 
         self._port_handler = port_handler
         self._packet_handler = scs.PacketHandler(PROTOCOL_VERSION)

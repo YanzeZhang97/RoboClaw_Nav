@@ -36,6 +36,7 @@ from roboclaw.config.paths import resolve_serial_by_id_path
 from roboclaw.session.manager import Session
 
 ProgressCallback = Callable[[str], Awaitable[None]]
+SO101_SERIAL_PROBE_MODULE = "roboclaw.embodied.execution.integration.bridges.ros2.scservo_probe"
 
 
 class OnboardingController:
@@ -156,13 +157,11 @@ class OnboardingController:
         if serial_path:
             serial_by_id = self._normalize_serial_device_by_id(serial_path)
             if serial_by_id is not None and facts.get("serial_device_by_id") != serial_by_id:
-                facts["serial_device_by_id"] = serial_by_id
-                facts.pop("serial_device_unstable", None)
+                self._set_serial_device_by_id(facts, serial_by_id)
                 changed = True
             elif serial_by_id is None:
-                if facts.get("serial_device_unstable") is not True:
-                    facts["serial_device_unstable"] = True
-                    facts.pop("serial_device_by_id", None)
+                if facts.get("serial_device_unstable") is not True or facts.get("serial_device_unresponsive") is True:
+                    self._set_unstable_serial_device(facts)
                     changed = True
 
         ros2_profile = extract_ros2_profile(content)
@@ -591,17 +590,11 @@ class OnboardingController:
             if serial_by_id is not None:
                 serial_check = await self._probe_so101_serial_device(serial_by_id, on_progress=on_progress)
                 if serial_check["ok"]:
-                    facts["serial_device_by_id"] = serial_by_id
-                    facts.pop("serial_device_unstable", None)
-                    facts.pop("serial_device_unresponsive", None)
-                    facts.pop("serial_probe_error", None)
+                    self._set_serial_device_by_id(facts, serial_by_id)
                 else:
-                    facts.pop("serial_device_by_id", None)
-                    facts["serial_device_unresponsive"] = True
-                    facts["serial_probe_error"] = serial_check["detail"]
+                    self._set_unresponsive_serial_device(facts, str(serial_check["detail"]))
             else:
-                facts.pop("serial_device_by_id", None)
-                facts["serial_device_unstable"] = True
+                self._set_unstable_serial_device(facts)
         if primary_profile is not None and primary_profile.requires_calibration:
             calibration_path = primary_profile.ensure_canonical_calibration()
             if calibration_path is not None and calibration_path.exists():
@@ -675,30 +668,7 @@ class OnboardingController:
                 "command": (
                     "bash -lc 'PY_BIN=\"$(command -v python3 || command -v python || true)\"; "
                     "if [ -z \"$PY_BIN\" ]; then printf \"ROBOCLAW_SO101_SERIAL_PYTHON_MISSING\\n\"; exit 0; fi; "
-                    "\"$PY_BIN\" - "
-                    f"{shlex.quote(serial_by_id)}"
-                    " <<\"PY\"\n"
-                    "from pathlib import Path\n"
-                    "import importlib.util\n"
-                    "import sys\n"
-                    "device = sys.argv[1]\n"
-                    "if importlib.util.find_spec(\"scservo_sdk\") is None:\n"
-                    "    print(\"ROBOCLAW_SO101_SERIAL_SDK_MISSING\")\n"
-                    "    raise SystemExit(0)\n"
-                    "import scservo_sdk as scs\n"
-                    "resolved = str(Path(device).resolve())\n"
-                    "port = scs.PortHandler(resolved)\n"
-                    "opened = port.openPort()\n"
-                    "baud_ok = port.setBaudRate(1000000)\n"
-                    "packet = scs.PacketHandler(0)\n"
-                    "value, result, error = packet.read2ByteTxRx(port, 6, 56)\n"
-                    "print(f\"ROBOCLAW_SO101_SERIAL_PROBE resolved={resolved} open={int(bool(opened))} baud={int(bool(baud_ok))} result={result} error={error} value={value}\")\n"
-                    "if result == getattr(scs, \"COMM_SUCCESS\", 0):\n"
-                    "    print(\"ROBOCLAW_SO101_SERIAL_OK\")\n"
-                    "else:\n"
-                    "    print(packet.getTxRxResult(result) or \"ROBOCLAW_SO101_SERIAL_NO_STATUS\")\n"
-                    "port.closePort()\n"
-                    "PY'"
+                    f"\"$PY_BIN\" -m {SO101_SERIAL_PROBE_MODULE} {shlex.quote(serial_by_id)}'"
                 )
             },
             on_progress=on_progress,
@@ -901,6 +871,27 @@ class OnboardingController:
         if serial_by_id is None:
             return None
         return str(serial_by_id)
+
+    @staticmethod
+    def _clear_serial_probe_facts(facts: dict[str, Any]) -> None:
+        for key in ("serial_device_by_id", "serial_device_unstable", "serial_device_unresponsive", "serial_probe_error"):
+            facts.pop(key, None)
+
+    @classmethod
+    def _set_serial_device_by_id(cls, facts: dict[str, Any], serial_by_id: str) -> None:
+        cls._clear_serial_probe_facts(facts)
+        facts["serial_device_by_id"] = serial_by_id
+
+    @classmethod
+    def _set_unstable_serial_device(cls, facts: dict[str, Any]) -> None:
+        cls._clear_serial_probe_facts(facts)
+        facts["serial_device_unstable"] = True
+
+    @classmethod
+    def _set_unresponsive_serial_device(cls, facts: dict[str, Any], detail: str) -> None:
+        cls._clear_serial_probe_facts(facts)
+        facts["serial_device_unresponsive"] = True
+        facts["serial_probe_error"] = detail
 
     def _render_intake(self, state: SetupOnboardingState) -> str:
         robot_lines = "\n".join(

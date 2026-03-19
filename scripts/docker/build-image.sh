@@ -18,12 +18,7 @@ require_clean_git
 configure_proxy_env
 
 build_args=()
-for key in HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy; do
-  value="${!key:-}"
-  if [ -n "${value}" ]; then
-    build_args+=(--build-arg "${key}=${value}")
-  fi
-done
+collect_proxy_build_args build_args
 
 docker build \
   --network=host \

@@ -67,11 +67,11 @@ from pathlib import Path
 import shutil
 import sys
 
-from roboclaw.config.paths import get_robot_calibration_dir
+from roboclaw.config.paths import get_robot_calibration_file
 
 robot_name, calibration_id, source_path = sys.argv[1:4]
 source = Path(source_path).expanduser().resolve()
-target = get_robot_calibration_dir(robot_name) / f"{calibration_id}.json"
+target = get_robot_calibration_file(robot_name, calibration_id)
 target.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(source, target)
 print(target)
