@@ -198,6 +198,7 @@ class ProcedureExecutor:
             )
 
         post_state = await adapter.get_state()
+        joint_deltas = self._joint_deltas(pre_state.values, post_state.values)
         context.runtime.status = RuntimeStatus.READY
         context.runtime.last_error = None
         completion = "completed" if primitive.completed is not False else "accepted"
@@ -210,9 +211,11 @@ class ProcedureExecutor:
             ok=True,
             message=message,
             details={
+                **primitive.output,
                 "state_before": pre_state.values,
                 "state_after": post_state.values,
-                **primitive.output,
+                "state_changed": bool(joint_deltas),
+                "joints_moved": [joint for joint, _ in joint_deltas],
             },
         )
 
@@ -358,6 +361,7 @@ class ProcedureExecutor:
         pre_state: dict[str, Any],
         post_state: dict[str, Any],
     ) -> str:
+        parts: list[str] = []
         gripper_before = ProcedureExecutor._gripper_percent(pre_state)
         gripper_after = ProcedureExecutor._gripper_percent(post_state)
         if primitive_name in {"gripper_open", "gripper_close"} and gripper_after is not None:
@@ -372,12 +376,44 @@ class ProcedureExecutor:
             else:
                 label = "partially open"
             if gripper_before is not None:
-                return (
+                parts.append(
                     f"Current gripper state: {label} "
                     f"({gripper_after:.1f}% open, was {gripper_before:.1f}%)."
                 )
-            return f"Current gripper state: {label} ({gripper_after:.1f}% open)."
-        return ""
+            else:
+                parts.append(f"Current gripper state: {label} ({gripper_after:.1f}% open).")
+        joint_deltas = ProcedureExecutor._joint_deltas(pre_state, post_state)
+        if joint_deltas:
+            moved = ", ".join(f"{joint} ({delta:+.2f})" for joint, delta in joint_deltas)
+            parts.append(f"Observed joint movement: {moved}.")
+        return " ".join(parts)
+
+    @staticmethod
+    def _joint_deltas(pre_state: dict[str, Any], post_state: dict[str, Any]) -> list[tuple[str, float]]:
+        before = ProcedureExecutor._joint_positions(pre_state)
+        after = ProcedureExecutor._joint_positions(post_state)
+        return [
+            (joint, delta)
+            for joint in sorted(before.keys() & after.keys())
+            if (
+                isinstance(before[joint], (int, float))
+                and isinstance(after[joint], (int, float))
+                and not isinstance(before[joint], bool)
+                and not isinstance(after[joint], bool)
+                and abs(delta := float(after[joint]) - float(before[joint])) > 0.01
+            )
+        ]
+
+    @staticmethod
+    def _joint_positions(values: dict[str, Any]) -> dict[str, Any]:
+        raw = values.get("joint_positions")
+        if isinstance(raw, dict):
+            return raw
+        return {
+            key: value
+            for key, value in values.items()
+            if key not in {"raw", "connected", "gripper_percent"} and isinstance(value, (int, float)) and not isinstance(value, bool)
+        }
 
     @staticmethod
     def _gripper_percent(values: dict[str, Any]) -> float | None:

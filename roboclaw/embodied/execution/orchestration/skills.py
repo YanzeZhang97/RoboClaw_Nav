@@ -51,6 +51,11 @@ async def execute_skill(
         result_type = type(result)
         if not result.ok:
             return result
+        if on_progress is not None:
+            changed = "yes" if result.details.get("state_changed") else "no"
+            await on_progress(
+                f"Completed skill `{skill.name}` step {index}/{len(skill.steps)}: `{step.primitive_name}` (state changed: {changed})."
+            )
         completed_steps.append({"primitive_name": step.primitive_name, "args": dict(step.args)})
     if result_type is None:
         result_type = SimpleNamespace

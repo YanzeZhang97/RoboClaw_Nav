@@ -54,3 +54,35 @@ async def test_execute_skill_stops_on_first_failure() -> None:
 
     assert result.ok is False
     assert calls == ["go_named_pose"]
+
+
+@pytest.mark.asyncio
+async def test_execute_skill_reports_step_state_feedback() -> None:
+    progress: list[str] = []
+
+    async def on_progress(message: str) -> None:
+        progress.append(message)
+
+    async def execute_move(context, *, primitive_name, primitive_args=None, on_progress=None):
+        assert on_progress is not None
+        return SimpleNamespace(
+            procedure=ProcedureKind.MOVE,
+            ok=True,
+            message=f"{primitive_name} ok",
+            details={"state_changed": primitive_name == "go_named_pose", "joints_moved": ["shoulder_pan"]},
+        )
+
+    await execute_skill(
+        SimpleNamespace(execute_move=execute_move),
+        SimpleNamespace(setup_id="demo"),
+        SkillSpec("reset_arm", "Reset arm.", (SkillStep("go_named_pose"), SkillStep("gripper_open"))),
+        {},
+        on_progress,
+    )
+
+    assert progress == [
+        "Running skill `reset_arm` step 1/2: `go_named_pose`.",
+        "Completed skill `reset_arm` step 1/2: `go_named_pose` (state changed: yes).",
+        "Running skill `reset_arm` step 2/2: `gripper_open`.",
+        "Completed skill `reset_arm` step 2/2: `gripper_open` (state changed: no).",
+    ]
