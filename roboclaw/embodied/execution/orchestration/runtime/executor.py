@@ -124,17 +124,19 @@ class ProcedureExecutor:
         context.runtime.status = RuntimeStatus.CONNECTING
 
         probe = adapter.probe_env()
-        deps = adapter.check_dependencies()
-        if not deps.ok:
-            missing = ", ".join(deps.missing_required) or "required ROS2 interfaces"
-            context.runtime.status = RuntimeStatus.ERROR
-            context.runtime.last_error = missing
-            return ProcedureExecutionResult(
-                procedure=ProcedureKind.CONNECT,
-                ok=False,
-                message=f"Setup `{context.setup_id}` is not ready yet: missing {missing}.",
-                details={"probe": probe.details, "missing_required": deps.missing_required},
-            )
+        # Skip dependency check for sim targets — the runtime launches during connect
+        if context.target.id != "sim":
+            deps = adapter.check_dependencies()
+            if not deps.ok:
+                missing = ", ".join(deps.missing_required) or "required ROS2 interfaces"
+                context.runtime.status = RuntimeStatus.ERROR
+                context.runtime.last_error = missing
+                return ProcedureExecutionResult(
+                    procedure=ProcedureKind.CONNECT,
+                    ok=False,
+                    message=f"Setup `{context.setup_id}` is not ready yet: missing {missing}.",
+                    details={"probe": probe.details, "missing_required": deps.missing_required},
+                )
 
         connected = await adapter.connect(
             target_id=context.target.id,
