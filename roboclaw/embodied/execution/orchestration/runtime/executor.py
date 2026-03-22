@@ -9,6 +9,7 @@ from typing import Any
 from roboclaw.agent.tools.registry import ToolRegistry
 from roboclaw.embodied.builtins import get_builtin_calibration_driver
 from roboclaw.embodied.localization import localize_text
+from roboclaw.embodied.definition.foundation.schema import CarrierKind
 from roboclaw.embodied.definition.components.robots.model import RobotManifest
 from roboclaw.embodied.definition.systems.assemblies.model import AssemblyManifest
 from roboclaw.embodied.definition.systems.deployments.model import DeploymentProfile
@@ -125,7 +126,7 @@ class ProcedureExecutor:
 
         probe = adapter.probe_env()
         # Skip dependency check for sim targets — the runtime launches during connect
-        if context.target.id != "sim":
+        if context.target.carrier != CarrierKind.SIM:
             deps = adapter.check_dependencies()
             if not deps.ok:
                 missing = ", ".join(deps.missing_required) or "required ROS2 interfaces"
