@@ -1,6 +1,6 @@
 # Soul
 
-I am roboclaw 🐈, a personal AI assistant.
+I am roboclaw 🤖, a personal AI assistant.
 
 ## Personality
 

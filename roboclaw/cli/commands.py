@@ -39,7 +39,7 @@ from roboclaw.utils.helpers import sync_workspace_templates
 
 app = typer.Typer(
     name="roboclaw",
-    help=f"{__logo__} roboclaw - Personal AI Assistant",
+    help=f"{__logo__} RoboClaw - Personal AI Assistant",
     no_args_is_help=True,
 )
 
@@ -137,7 +137,7 @@ def _print_agent_response(response: str, render_markdown: bool) -> None:
     content = response or ""
     body = Markdown(content) if render_markdown else Text(content)
     console.print()
-    console.print(f"[cyan]{__logo__} roboclaw[/cyan]")
+    console.print(f"[cyan]{__logo__} RoboClaw[/cyan]")
     console.print(body)
     console.print()
 
@@ -160,7 +160,7 @@ async def _print_interactive_response(response: str, render_markdown: bool) -> N
         ansi = _render_interactive_ansi(
             lambda c: (
                 c.print(),
-                c.print(f"[cyan]{__logo__} roboclaw[/cyan]"),
+                c.print(f"[cyan]{__logo__} RoboClaw[/cyan]"),
                 c.print(Markdown(content) if render_markdown else Text(content)),
                 c.print(),
             )
@@ -175,7 +175,7 @@ class _ThinkingSpinner:
 
     def __init__(self, enabled: bool):
         self._spinner = console.status(
-            "[dim]roboclaw is thinking...[/dim]", spinner="dots"
+            "[dim]RoboClaw is thinking...[/dim]", spinner="dots"
         ) if enabled else None
         self._active = False
 
@@ -242,7 +242,7 @@ async def _read_interactive_input_async() -> str:
 
 def version_callback(value: bool):
     if value:
-        console.print(f"{__logo__} roboclaw v{__version__}")
+        console.print(f"{__logo__} RoboClaw v{__version__}")
         raise typer.Exit()
 
 
@@ -252,7 +252,7 @@ def main(
         None, "--version", "-v", callback=version_callback, is_eager=True
     ),
 ):
-    """roboclaw - Personal AI Assistant."""
+    """RoboClaw - Personal AI Assistant."""
     pass
 
 
@@ -298,7 +298,7 @@ def onboard():
 
     sync_workspace_templates(workspace)
 
-    console.print(f"\n{__logo__} roboclaw is ready!")
+    console.print(f"\n{__logo__} RoboClaw is ready!")
     console.print("\nNext steps:")
     console.print("  1. Add your API key to [cyan]~/.roboclaw/config.json[/cyan]")
     console.print("     Get one at: https://openrouter.ai/keys")
@@ -461,7 +461,7 @@ def gateway(
     _print_deprecated_memory_window_notice(config)
     port = port if port is not None else config.gateway.port
 
-    console.print(f"{__logo__} Starting roboclaw gateway version {__version__} on port {port}...")
+    console.print(f"{__logo__} Starting RoboClaw gateway version {__version__} on port {port}...")
     sync_workspace_templates(config.workspace_path)
     bus = MessageBus()
     provider = _make_provider(config)
@@ -1000,7 +1000,7 @@ def status():
     config = load_config()
     workspace = config.workspace_path
 
-    console.print(f"{__logo__} roboclaw Status\n")
+    console.print(f"{__logo__} RoboClaw Status\n")
 
     console.print(f"Config: {config_path} {'[green]✓[/green]' if config_path.exists() else '[red]✗[/red]'}")
     console.print(f"Workspace: {workspace} {'[green]✓[/green]' if workspace.exists() else '[red]✗[/red]'}")
