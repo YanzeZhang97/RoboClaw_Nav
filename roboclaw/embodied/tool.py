@@ -15,7 +15,10 @@ _ACTIONS = [
     "run_policy",
     "job_status",
     "setup_show",
-    "setup_update",
+    "set_arm",
+    "remove_arm",
+    "set_camera",
+    "remove_camera",
 ]
 
 _LOGS_DIR = Path("~/.roboclaw/workspace/embodied/jobs").expanduser()
@@ -25,7 +28,8 @@ _NO_TTY_MSG = "This action requires a local terminal. Run: roboclaw agent"
 class EmbodiedTool(Tool):
     """Control embodied robots via the agent.
 
-    The agent maintains setup.json through conversation (setup_show / setup_update).
+    The agent maintains setup.json through structured actions
+    (set_arm, remove_arm, set_camera, remove_camera, setup_show).
     All hardware actions read setup.json for arm ports, cameras, calibration dirs.
     """
 
@@ -41,9 +45,10 @@ class EmbodiedTool(Tool):
         return (
             "Control embodied robots — connect, calibrate, collect data, "
             "train policies, and run inference. "
-            "Use setup_show to view current config, setup_update to change it. "
-            "The setup has 'arms' (keyed by role like follower/leader) and "
-            "'cameras' (keyed by position like front/side)."
+            "Use setup_show to view current config. "
+            "Use set_arm/remove_arm to configure arms (role: follower/leader). "
+            "Use set_camera/remove_camera to configure cameras "
+            "(picks from scanned_cameras by index)."
         )
 
     @property
@@ -88,28 +93,42 @@ class EmbodiedTool(Tool):
                     "type": "string",
                     "description": "Device for training (default: cuda).",
                 },
-                "updates": {
-                    "type": "object",
-                    "description": "Fields to merge into setup.json (for setup_update).",
+                "role": {
+                    "type": "string",
+                    "enum": ["follower", "leader"],
+                    "description": "Arm role (for set_arm / remove_arm).",
+                },
+                "arm_type": {
+                    "type": "string",
+                    "enum": ["so101_follower", "so101_leader"],
+                    "description": "Arm hardware type (for set_arm).",
+                },
+                "port": {
+                    "type": "string",
+                    "description": "Serial port path (for set_arm).",
+                },
+                "camera_name": {
+                    "type": "string",
+                    "description": "Camera name like front/side (for set_camera / remove_camera).",
+                },
+                "camera_index": {
+                    "type": "integer",
+                    "description": "Index into scanned_cameras (for set_camera).",
                 },
             },
             "required": ["action"],
         }
 
     async def execute(self, **kwargs: Any) -> str:
-        from roboclaw.embodied.setup import ensure_setup, load_setup, update_setup
+        from roboclaw.embodied.setup import ensure_setup, load_setup
 
         action = kwargs.get("action", "")
 
         if action == "setup_show":
             return json.dumps(load_setup(), indent=2, ensure_ascii=False)
 
-        if action == "setup_update":
-            updates = kwargs.get("updates", {})
-            if not updates:
-                return "No updates provided."
-            updated = update_setup(updates)
-            return f"Setup updated:\n{json.dumps(updated, indent=2, ensure_ascii=False)}"
+        if action in ("set_arm", "remove_arm", "set_camera", "remove_camera"):
+            return self._handle_setup_action(action, kwargs)
 
         setup = ensure_setup()
 
@@ -130,6 +149,53 @@ class EmbodiedTool(Tool):
 
         return f"Unknown action: {action}"
 
+    def _handle_setup_action(self, action: str, kwargs: dict) -> str:
+        """Dispatch structured setup mutations. Returns user-facing message."""
+        from roboclaw.embodied.setup import remove_arm, remove_camera, set_arm, set_camera
+
+        if action == "set_arm":
+            return self._do_set_arm(kwargs, set_arm)
+        if action == "remove_arm":
+            return self._do_remove_arm(kwargs, remove_arm)
+        if action == "set_camera":
+            return self._do_set_camera(kwargs, set_camera)
+        return self._do_remove_camera(kwargs, remove_camera)
+
+    @staticmethod
+    def _do_set_arm(kwargs: dict, fn: Any) -> str:
+        role = kwargs.get("role", "")
+        arm_type = kwargs.get("arm_type", "")
+        port = kwargs.get("port", "")
+        if not all([role, arm_type, port]):
+            return "set_arm requires role, arm_type, and port."
+        updated = fn(role, arm_type, port)
+        return f"Arm '{role}' configured.\n{json.dumps(updated['arms'][role], indent=2)}"
+
+    @staticmethod
+    def _do_remove_arm(kwargs: dict, fn: Any) -> str:
+        role = kwargs.get("role", "")
+        if not role:
+            return "remove_arm requires role."
+        fn(role)
+        return f"Arm '{role}' removed."
+
+    @staticmethod
+    def _do_set_camera(kwargs: dict, fn: Any) -> str:
+        name = kwargs.get("camera_name", "")
+        index = kwargs.get("camera_index")
+        if not name or index is None:
+            return "set_camera requires camera_name and camera_index."
+        updated = fn(name, index)
+        return f"Camera '{name}' configured.\n{json.dumps(updated['cameras'][name], indent=2)}"
+
+    @staticmethod
+    def _do_remove_camera(kwargs: dict, fn: Any) -> str:
+        name = kwargs.get("camera_name", "")
+        if not name:
+            return "remove_camera requires camera_name."
+        fn(name)
+        return f"Camera '{name}' removed."
+
     async def _do_doctor(self, setup: dict) -> str:
         from roboclaw.embodied.embodiment.so101 import SO101Controller
         from roboclaw.embodied.runner import LocalLeRobotRunner
@@ -144,7 +210,7 @@ class EmbodiedTool(Tool):
 
         arms = setup.get("arms", {})
         if not arms:
-            return "No arms configured in setup. Use setup_update to add arms first."
+            return "No arms configured in setup. Use set_arm to add arms first."
         uncalibrated = {name: arm for name, arm in arms.items() if arm.get("calibrated") is not True}
         if not uncalibrated:
             return "All arms are already calibrated."
@@ -229,7 +295,7 @@ class EmbodiedTool(Tool):
 
         follower = setup.get("arms", {}).get("follower")
         if not follower:
-            return "No follower arm configured. Use setup_update to add one."
+            return "No follower arm configured. Use set_arm to add one."
         cameras = self._resolve_cameras(setup)
         policies_root = setup.get("policies", {}).get("root", "")
         checkpoint = kwargs.get("checkpoint_path") or ACTPipeline().checkpoint_path(policies_root)
@@ -253,9 +319,9 @@ class EmbodiedTool(Tool):
         follower = arms.get("follower")
         leader = arms.get("leader")
         if not follower:
-            return "No follower arm configured. Use setup_update to add arms.", None
+            return "No follower arm configured. Use set_arm to add arms.", None
         if not leader:
-            return "No leader arm configured. Use setup_update to add arms.", None
+            return "No leader arm configured. Use set_arm to add arms.", None
         return follower, leader
 
     def _resolve_cameras(self, setup: dict) -> dict[str, dict]:

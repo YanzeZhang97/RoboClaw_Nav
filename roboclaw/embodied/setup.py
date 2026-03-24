@@ -9,6 +9,14 @@ from typing import Any
 
 SETUP_PATH = Path("~/.roboclaw/workspace/embodied/setup.json").expanduser()
 
+_ARM_TYPES = ("so101_follower", "so101_leader")
+_ARM_ROLES = ("follower", "leader")
+_ARM_FIELDS = {"type", "port", "calibration_dir", "calibrated"}
+_CAMERA_FIELDS = {"by_path", "by_id", "dev", "width", "height"}
+_VALID_TOP_KEYS = {"version", "arms", "cameras", "datasets", "policies", "scanned_ports", "scanned_cameras"}
+
+_CALIBRATION_ROOT = Path("~/.roboclaw/workspace/embodied/calibration").expanduser()
+
 _DEFAULT_SETUP: dict[str, Any] = {
     "version": 2,
     "arms": {},
@@ -33,6 +41,7 @@ def load_setup(path: Path = SETUP_PATH) -> dict[str, Any]:
 
 def save_setup(setup: dict[str, Any], path: Path = SETUP_PATH) -> None:
     """Write setup.json, creating parent dirs if needed."""
+    _validate_setup(setup)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(setup, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
@@ -58,11 +67,114 @@ def ensure_setup(path: Path = SETUP_PATH) -> dict[str, Any]:
 
 
 def update_setup(updates: dict[str, Any], path: Path = SETUP_PATH) -> dict[str, Any]:
-    """Merge updates into existing setup and save. Returns the merged result."""
+    """Merge updates into existing setup and save. Returns the merged result.
+
+    Internal helper for programmatic updates (e.g. calibrate marking arms done).
+    Not exposed as an agent action — use set_arm / set_camera instead.
+    """
     setup = load_setup(path)
     _deep_merge(setup, updates)
     save_setup(setup, path)
     return setup
+
+
+# ── Structured mutators (exposed as agent actions) ──────────────────
+
+
+def set_arm(role: str, arm_type: str, port: str, path: Path = SETUP_PATH) -> dict[str, Any]:
+    """Add or update an arm. Auto-fills calibration_dir, sets calibrated=False."""
+    if role not in _ARM_ROLES:
+        raise ValueError(f"Invalid role '{role}'. Must be one of {_ARM_ROLES}.")
+    if arm_type not in _ARM_TYPES:
+        raise ValueError(f"Invalid arm_type '{arm_type}'. Must be one of {_ARM_TYPES}.")
+    if not port:
+        raise ValueError("Arm port is required.")
+    setup = load_setup(path)
+    setup.setdefault("arms", {})[role] = {
+        "type": arm_type,
+        "port": port,
+        "calibration_dir": str(_CALIBRATION_ROOT / role),
+        "calibrated": False,
+    }
+    save_setup(setup, path)
+    return setup
+
+
+def remove_arm(role: str, path: Path = SETUP_PATH) -> dict[str, Any]:
+    """Remove an arm by role."""
+    setup = load_setup(path)
+    arms = setup.get("arms", {})
+    if role not in arms:
+        raise ValueError(f"No arm with role '{role}' in setup.")
+    del arms[role]
+    save_setup(setup, path)
+    return setup
+
+
+def set_camera(name: str, camera_index: int, path: Path = SETUP_PATH) -> dict[str, Any]:
+    """Add or update a camera by picking from scanned_cameras by index."""
+    setup = load_setup(path)
+    scanned = setup.get("scanned_cameras", [])
+    if camera_index < 0 or camera_index >= len(scanned):
+        raise ValueError(
+            f"camera_index {camera_index} out of range. "
+            f"scanned_cameras has {len(scanned)} entries."
+        )
+    source = scanned[camera_index]
+    entry = {field: source[field] for field in _CAMERA_FIELDS if field in source}
+    setup.setdefault("cameras", {})[name] = entry
+    save_setup(setup, path)
+    return setup
+
+
+def remove_camera(name: str, path: Path = SETUP_PATH) -> dict[str, Any]:
+    """Remove a camera by name."""
+    setup = load_setup(path)
+    cameras = setup.get("cameras", {})
+    if name not in cameras:
+        raise ValueError(f"No camera named '{name}' in setup.")
+    del cameras[name]
+    save_setup(setup, path)
+    return setup
+
+
+# ── Validation ───────────────────────────────────────────────────────
+
+
+def _validate_setup(setup: dict[str, Any]) -> None:
+    """Validate setup against schema. Raises ValueError on invalid data."""
+    invalid_top = set(setup.keys()) - _VALID_TOP_KEYS
+    if invalid_top:
+        raise ValueError(f"Unknown top-level keys: {invalid_top}")
+    _validate_arms(setup.get("arms", {}))
+    _validate_cameras(setup.get("cameras", {}))
+
+
+def _validate_arms(arms: Any) -> None:
+    """Validate all arm entries."""
+    if not isinstance(arms, dict):
+        raise ValueError("'arms' must be a dict.")
+    for role, arm in arms.items():
+        if not isinstance(arm, dict):
+            raise ValueError(f"Arm '{role}' must be a dict.")
+        bad_fields = set(arm.keys()) - _ARM_FIELDS
+        if bad_fields:
+            raise ValueError(f"Arm '{role}' has unknown fields: {bad_fields}")
+        arm_type = arm.get("type")
+        if arm_type is not None and arm_type not in _ARM_TYPES:
+            raise ValueError(f"Arm '{role}' has invalid type '{arm_type}'.")
+
+
+def _validate_cameras(cameras: Any) -> None:
+    """Validate all camera entries."""
+    if not isinstance(cameras, dict):
+        raise ValueError("'cameras' must be a dict.")
+    for name, cam in cameras.items():
+        if not isinstance(cam, dict):
+            raise ValueError(f"Camera '{name}' must be a dict.")
+        bad_fields = set(cam.keys()) - _CAMERA_FIELDS
+        if bad_fields:
+            raise ValueError(f"Camera '{name}' has unknown fields: {bad_fields}")
 
 
 def _deep_merge(base: dict, override: dict) -> None:
