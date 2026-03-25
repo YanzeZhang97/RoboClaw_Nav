@@ -324,7 +324,7 @@ def onboard():
     console.print("  1. Add your API key to [cyan]~/.roboclaw/config.json[/cyan]")
     console.print("     Get one at: https://openrouter.ai/keys")
     console.print("  2. Chat: [cyan]roboclaw agent -m \"Hello!\"[/cyan]")
-    console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/roboclaw#-chat-apps[/dim]")
+    console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/MINT-SJTU/RoboClaw#-chat-apps[/dim]")
 
 
 def _merge_missing_defaults(existing: Any, defaults: Any) -> Any:
