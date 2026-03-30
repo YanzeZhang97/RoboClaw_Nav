@@ -19,26 +19,9 @@
   <img src="roboclaw_arch.png" alt="RoboClaw Architecture" width="800" />
 </p>
 
-## ⚡ Unified Control, Different Surfaces
+## 🎬 Demo
 
-<table>
-<tr>
-<th width="70%">🖥️ CLI / TUI</th>
-<th width="30%">📱 Mobile</th>
-</tr>
-<tr>
-<td>
-
-https://github.com/MINT-SJTU/RoboClaw/raw/main/roboclaw_demo.mp4
-
-</td>
-<td align="center">
-<br/><br/><br/>
-<b>Coming Soon</b>
-<br/><br/><br/><br/>
-</td>
-</tr>
-</table>
+<video src="https://github.com/MINT-SJTU/RoboClaw/releases/download/demo-v0.1/roboclaw_demo.mp4" controls muted style="max-width:100%; max-height:640px;"></video>
 
 ## 📢 News
 
