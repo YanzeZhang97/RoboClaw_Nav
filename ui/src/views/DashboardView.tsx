@@ -35,6 +35,60 @@ function Btn({
   )
 }
 
+// ── Camera preview ────────────────────────────────────────────
+function CameraPreviewPanel({
+  cameras,
+  recording,
+  t,
+}: {
+  cameras: { alias: string; connected: boolean; width: number; height: number }[]
+  recording: boolean
+  t: (key: any) => string
+}) {
+  const [tick, setTick] = useState(0)
+
+  useEffect(() => {
+    if (recording) return
+    const connected = cameras.filter((c) => c.connected)
+    if (!connected.length) return
+    const timer = setInterval(() => setTick((n) => n + 1), 1500)
+    return () => clearInterval(timer)
+  }, [cameras, recording])
+
+  const connected = cameras.filter((c) => c.connected)
+
+  if (!connected.length) {
+    return (
+      <div className="bg-sf p-2 min-h-[180px] flex items-center justify-center border-b border-bd">
+        <span className="text-tx2">{t('noCameraFeed')}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-black/5 p-2 flex flex-wrap gap-2 border-b border-bd">
+      {connected.map((cam) => (
+        <div key={cam.alias} className="flex-1 min-w-[250px] max-w-[520px] relative bg-sf rounded-lg overflow-hidden border border-bd">
+          {recording ? (
+            <div className="aspect-video flex items-center justify-center text-sm text-tx2">
+              {t('stateRecording')}...
+            </div>
+          ) : (
+            <img
+              src={`/api/dashboard/camera-preview/${cam.alias}?t=${tick}`}
+              alt={cam.alias}
+              className="w-full aspect-video object-contain bg-black"
+            />
+          )}
+          <div className="absolute top-1.5 left-2 bg-black/60 text-white text-2xs px-2 py-0.5 rounded">
+            {cam.alias}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function canDo(state: RobotState) {
   const disc = state === 'disconnected'
   const conn = state === 'connected'
@@ -124,10 +178,8 @@ export default function DashboardView() {
       <div className="flex-1 grid grid-cols-[1fr_320px] overflow-hidden max-[900px]:grid-cols-1">
         {/* Left: camera + controls */}
         <div className="flex flex-col overflow-y-auto">
-          {/* Camera panel */}
-          <div className="bg-sf p-2 min-h-[200px] flex items-center justify-center flex-wrap gap-2 border-b border-bd max-[500px]:min-h-[140px]">
-            <span className="text-tx2">{t('noCameraFeed')}</span>
-          </div>
+          {/* Camera preview panel */}
+          <CameraPreviewPanel cameras={hwStatus?.cameras || []} recording={state === 'recording'} t={t} />
 
           {/* Control grid */}
           <div className="grid grid-cols-2 gap-3 p-4 max-[900px]:grid-cols-1">
