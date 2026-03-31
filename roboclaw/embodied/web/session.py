@@ -170,7 +170,7 @@ class RobotSession:
         ds_path = _dataset_path(self._setup, dataset_name)
         record_kwargs: dict[str, Any] = {
             "cameras": self._cameras,
-            "repo_id": dataset_name,
+            "repo_id": f"local/{dataset_name}",
             "dataset_root": str(ds_path.parent),
             "task": task,
             "fps": fps,
