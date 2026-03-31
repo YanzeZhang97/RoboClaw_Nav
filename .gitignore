@@ -24,5 +24,6 @@ nano.*.save
 .DS_Store
 uv.lock
 package-lock.json
+node_modules/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
