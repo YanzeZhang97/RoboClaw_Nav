@@ -23,5 +23,6 @@ botpy.log
 nano.*.save
 .DS_Store
 uv.lock
+package-lock.json
 .claude/scheduled_tasks.lock
 .claude/worktrees/
