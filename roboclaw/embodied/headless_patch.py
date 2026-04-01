@@ -93,6 +93,18 @@ def apply_headless_patch() -> None:
     """Patch LeRobot to use a TTY listener instead of relying on pynput/X11."""
 
     import lerobot.utils.control_utils as control_utils
+    import lerobot.utils.utils as lerobot_utils
+
+    # Patch log_say to also print to stdout so the parent process can parse it.
+    # The default logging.info() produces no output without a configured handler.
+    _original_say = lerobot_utils.say
+
+    def _log_say(text: str, play_sounds: bool = True, blocking: bool = False) -> None:
+        print(f"[lerobot] {text}", flush=True)
+        if play_sounds:
+            _original_say(text, blocking)
+
+    lerobot_utils.log_say = _log_say
 
     def init_keyboard_listener():
         events = {
