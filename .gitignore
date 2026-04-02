@@ -27,3 +27,16 @@ package-lock.json
 node_modules/
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# ROS workspace build artifacts
+robotics/ros_ws/build/
+robotics/ros_ws/install/
+robotics/ros_ws/log/
+
+# Local simulation planning docs
+docs/simulation-agent-workflow.md
+docs/simulation-development-flow.md
+
+# Local robotics docs
+robotics/README.md
+robotics/README.general.md
