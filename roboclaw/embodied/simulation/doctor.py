@@ -3,65 +3,23 @@
 This module is the Phase 2 aggregation layer: it asks ROS 2 discovery what is
 installed and what is currently running, then returns a machine-readable
 capability manifest. It does not install dependencies, launch simulators, send
-navigation goals, or write setup.json.
+navigation goals, or write simulation state.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from typing import Any, Sequence
 
 from roboclaw.embodied.ros2.discovery import Ros2Discovery
+from roboclaw.embodied.simulation.profiles import (
+    DEFAULT_PROFILE,
+    SimulationProfile,
+    TransformCheck,
+)
 
 
-@dataclass(frozen=True)
-class TransformCheck:
-    """A TF transform expected to exist in the running simulation."""
-
-    target_frame: str
-    source_frame: str
-
-    @property
-    def key(self) -> str:
-        return f"{self.target_frame}->{self.source_frame}"
-
-
-@dataclass(frozen=True)
-class SimulationDoctorProfile:
-    """Expected ROS 2 capabilities for one simulation baseline."""
-
-    mode: str = "simulation"
-    robot: str = "turtlebot3"
-    simulator: str = "gazebo"
-    packages: tuple[str, ...] = (
-        "turtlebot3_gazebo",
-        "turtlebot3_navigation2",
-        "nav2_bringup",
-        "tf2_ros",
-    )
-    nodes: tuple[str, ...] = (
-        "/bt_navigator",
-        "/controller_server",
-        "/planner_server",
-    )
-    topics: tuple[str, ...] = (
-        "/cmd_vel",
-        "/odom",
-        "/scan",
-        "/tf",
-    )
-    actions: tuple[str, ...] = (
-        "/navigate_to_pose",
-    )
-    services: tuple[str, ...] = ()
-    transforms: tuple[TransformCheck, ...] = (
-        TransformCheck("map", "odom"),
-        TransformCheck("odom", "base_footprint"),
-    )
-
-
-DEFAULT_PROFILE = SimulationDoctorProfile()
+SimulationDoctorProfile = SimulationProfile
 
 
 class SimulationDoctor:
@@ -248,6 +206,7 @@ class SimulationDoctor:
         }
         decision, next_steps = self._decision(status, errors)
         return {
+            "profile_id": self._profile.profile_id,
             "mode": self._profile.mode,
             "robot": self._profile.robot,
             "simulator": self._profile.simulator,

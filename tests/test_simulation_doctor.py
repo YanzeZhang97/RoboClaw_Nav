@@ -96,6 +96,7 @@ class _FakeDiscovery:
 def test_simulation_doctor_ready_manifest() -> None:
     manifest = SimulationDoctor(discovery=_FakeDiscovery(), profile=_PROFILE).check()
 
+    assert manifest["profile_id"] == "turtlebot3_gazebo_nav2"
     assert manifest["status"] == {
         "environment_installed": True,
         "runtime_up": True,
