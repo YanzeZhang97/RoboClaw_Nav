@@ -48,9 +48,25 @@ class Manifest:
         self._datasets: dict[str, Any] = {}
         self._policies: dict[str, Any] = {}
         self._bindings: dict[str, Binding] = {}
+        self._file_mtime: float = 0.0
         self._load()
 
     # ── Internal I/O ──────────────────────────────────────────────────
+
+    def _file_mtime_on_disk(self) -> float:
+        try:
+            return self._path.stat().st_mtime
+        except FileNotFoundError:
+            return 0.0
+
+    def _sync_from_disk(self) -> None:
+        """Reload from disk if another process has written the file."""
+        current = self._file_mtime_on_disk()
+        if current > self._file_mtime:
+            with self._lock:
+                # Double-check after acquiring lock.
+                if self._file_mtime_on_disk() > self._file_mtime:
+                    self._load()
 
     def _load(self) -> None:
         """Load from disk. Migrate setup.json -> manifest.json if needed."""
@@ -77,6 +93,7 @@ class Manifest:
             for item in data.get(kind, []):
                 binding = Binding.from_dict(item, kind[:-1], self._guards)
                 self._bindings[binding.alias] = binding
+        self._file_mtime = self._file_mtime_on_disk()
 
     def _persist(self) -> None:
         """Atomic write: tempfile + os.replace."""
@@ -89,6 +106,7 @@ class Manifest:
                 json.dump(snapshot, f, indent=2, ensure_ascii=False)
                 f.write("\n")
             os.replace(tmp_path, str(self._path))
+            self._file_mtime = self._file_mtime_on_disk()
         except BaseException:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
@@ -157,26 +175,31 @@ class Manifest:
 
     @property
     def snapshot(self) -> dict[str, Any]:
+        self._sync_from_disk()
         with self._lock:
             return self._snapshot_unlocked()
 
     @property
     def arms(self) -> list[Binding]:
+        self._sync_from_disk()
         with self._lock:
             return [binding for binding in self._bindings.values() if binding.kind == "arm"]
 
     @property
     def cameras(self) -> list[Binding]:
+        self._sync_from_disk()
         with self._lock:
             return [binding for binding in self._bindings.values() if binding.kind == "camera"]
 
     @property
     def hands(self) -> list[Binding]:
+        self._sync_from_disk()
         with self._lock:
             return [binding for binding in self._bindings.values() if binding.kind == "hand"]
 
     @property
     def bindings(self) -> list[Binding]:
+        self._sync_from_disk()
         with self._lock:
             return list(self._bindings.values())
 

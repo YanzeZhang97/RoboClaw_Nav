@@ -45,6 +45,7 @@ class Board:
         self._start_time: float = 0.0
         self._input_consumer_notify: Any = None
         self._subscribers: dict[str | None, list[Subscriber]] = {}
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # ── Pub/Sub ──
 
@@ -62,6 +63,9 @@ class Board:
 
     async def emit(self, channel: str, data: dict[str, Any]) -> None:
         """Publish *data* to *channel*. Notifies matching + wildcard subscribers."""
+        # Lazily capture the event loop on first async call.
+        if self._loop is None:
+            self._loop = asyncio.get_running_loop()
         with self._lock:
             handlers = [
                 *self._subscribers.get(channel, []),
@@ -78,14 +82,22 @@ class Board:
     def emit_sync(self, channel: str, data: dict[str, Any]) -> None:
         """Fire-and-forget emit for synchronous contexts (e.g. Manifest).
 
-        Schedules emit() on the running event loop. Safe to call from
-        threads that hold synchronous locks.
+        Safe to call from any thread — uses call_soon_threadsafe to
+        schedule the async emit on the event loop thread.
         """
+        # Fast path: already on the event loop thread.
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self.emit(channel, data))
+            return
         except RuntimeError:
-            logger.debug("emit_sync(): no running event loop, event on '{}' dropped", channel)
+            pass
+        # Slow path: called from a worker thread (asyncio.to_thread, etc.).
+        loop = self._loop
+        if loop is not None and not loop.is_closed():
+            loop.call_soon_threadsafe(loop.create_task, self.emit(channel, data))
+        else:
+            logger.debug("emit_sync(): no event loop bound, event on '{}' dropped", channel)
 
     # ── State (OutputConsumer writes, Agent/Frontend reads) ──
 
