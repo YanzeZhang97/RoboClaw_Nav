@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useI18n } from '../controllers/i18n'
 import type { ArmStatus } from '../controllers/dashboard'
 
@@ -9,28 +9,23 @@ interface ArmPairingPanelProps {
 
 export function ArmPairingPanel({ arms, onChange }: ArmPairingPanelProps) {
   const { t } = useI18n()
+  const armKey = useMemo(() => arms.map(a => a.alias).join(','), [arms])
   const [selected, setSelected] = useState<Set<string>>(() => new Set(arms.map(a => a.alias)))
 
   useEffect(() => {
     setSelected(new Set(arms.map(a => a.alias)))
-  }, [arms.length])
-
-  useEffect(() => {
-    // All selected = empty string (use all arms, same as default)
-    const allSelected = selected.size === arms.length
-    onChange(allSelected ? '' : Array.from(selected).join(','))
-  }, [selected, arms.length])
+    onChange('')
+  }, [armKey])
 
   const followers = arms.filter(a => a.role === 'follower')
   const leaders = arms.filter(a => a.role === 'leader')
 
   function toggle(alias: string) {
-    setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(alias)) next.delete(alias)
-      else next.add(alias)
-      return next
-    })
+    const next = new Set(selected)
+    if (next.has(alias)) next.delete(alias)
+    else next.add(alias)
+    setSelected(next)
+    onChange(next.size === arms.length ? '' : Array.from(next).join(','))
   }
 
   function renderArm(arm: ArmStatus) {

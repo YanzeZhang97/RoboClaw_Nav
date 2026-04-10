@@ -84,10 +84,12 @@ def resolve_action_arms(manifest: Any, arms_filter: str = "") -> list[Binding]:
         return []
     if not arms_filter:
         return list(configured)
-    tokens = {t.strip() for t in arms_filter.split(",") if t.strip()}
     resolved = []
     seen: set[str] = set()
-    for token in tokens:
+    for raw in arms_filter.split(","):
+        token = raw.strip()
+        if not token:
+            continue
         if token in seen:
             raise ActionError(f"Duplicate arm identifier '{token}'.")
         seen.add(token)

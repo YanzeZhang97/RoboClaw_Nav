@@ -192,9 +192,9 @@ export default function ControlView() {
               </div>
             )}
 
-            {/* Arm pairing */}
+            {/* Arm pairing — stopPropagation prevents card's onClick navigating to /settings */}
             {hwStatus && hwStatus.arms.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-bd/40">
+              <div className="mt-2 pt-2 border-t border-bd/40" onClick={e => e.stopPropagation()}>
                 <ArmPairingPanel arms={hwStatus.arms} onChange={setSelectedArms} />
               </div>
             )}
