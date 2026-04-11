@@ -116,8 +116,14 @@ export default function ControlView() {
     return () => clearInterval(interval)
   }, [busy])
 
+  const [taskError, setTaskError] = useState(false)
+
   function handleRecordStart() {
-    if (!task.trim()) { store.addLog(t('fillTaskDesc'), 'err'); return }
+    if (!task.trim()) {
+      setTaskError(true)
+      setTimeout(() => setTaskError(false), 1500)
+      return
+    }
     store.doRecordStart({
       task: task.trim(),
       num_episodes: numEp,
@@ -241,10 +247,11 @@ export default function ControlView() {
             <h3 className="text-2xs text-tx3 font-mono uppercase tracking-widest mb-3">{t('recording')}</h3>
             <input
               value={task}
-              onChange={(e) => setTask(e.target.value)}
+              onChange={(e) => { setTask(e.target.value); setTaskError(false) }}
               placeholder="Pick up the red block"
-              className="w-full bg-sf2 border border-bd text-tx px-3 py-2 rounded-lg text-sm
-                focus:outline-none focus:border-ac focus:shadow-glow-ac placeholder:text-tx3 mb-3"
+              className={`w-full bg-sf2 border text-tx px-3 py-2 rounded-lg text-sm
+                focus:outline-none focus:border-ac focus:shadow-glow-ac placeholder:text-tx3 mb-3
+                ${taskError ? 'border-rd animate-shake' : 'border-bd'}`}
             />
             <div className="flex gap-2 items-end flex-wrap">
               <label className="flex flex-col gap-1 text-2xs text-tx3 font-mono w-[72px]">
