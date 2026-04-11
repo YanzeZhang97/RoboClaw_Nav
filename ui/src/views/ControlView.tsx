@@ -87,6 +87,7 @@ export default function ControlView() {
     return () => clearInterval(pollInterval)
   }, [])
 
+
   const stateLabel: Record<string, string> = {
     preparing: t('hwInitializing'),
     teleoperating: t('stateTeleoperating'),
