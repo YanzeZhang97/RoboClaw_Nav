@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useI18n } from '../controllers/i18n'
-import { useExplorer, type FeatureStat, type ModalityItem } from '../controllers/explorer'
+import { useExplorer, type FeatureStat, type ModalityItem, type EpisodeDetail } from '../controllers/explorer'
 import { useWorkflow } from '../controllers/curation'
 import { ActionButton, GlassPanel, MetricCard } from '../components/ux'
 
@@ -129,8 +130,40 @@ function EpisodeBrowser() {
   const episodes = dashboard?.episodes ?? []
   const selectedDataset = dashboard?.dataset ?? ''
 
+  const [hoveredEpisodeIndex, setHoveredEpisodeIndex] = useState<number | null>(null)
+  const [hoveredPreview, setHoveredPreview] = useState<EpisodeDetail | null>(null)
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const closeTimerRef = useRef<number | null>(null)
+
   if (episodes.length === 0) {
     return <div className="explorer-empty">{t('noDatasets')}</div>
+  }
+
+  const handleMouseEnter = async (episodeIndex: number) => {
+    if (closeTimerRef.current) {
+      window.clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
+    setHoveredEpisodeIndex(episodeIndex)
+    try {
+      const response = await fetch(
+        `/api/explorer/episode?dataset=${encodeURIComponent(selectedDataset)}&episode_index=${episodeIndex}`
+      )
+      if (!response.ok) return
+      const detail: EpisodeDetail = await response.json()
+      setHoveredPreview(detail)
+    } catch (error) {
+      console.error('Failed to load preview:', error)
+    }
+  }
+
+  const handleMouseLeave = () => {
+    closeTimerRef.current = window.setTimeout(() => {
+      setHoveredEpisodeIndex(null)
+      setHoveredPreview(null)
+      setVideoCurrentTime(0)
+    }, 200)
   }
 
   return (
@@ -151,12 +184,152 @@ function EpisodeBrowser() {
                 void selectEpisode(selectedDataset || '', ep.episode_index)
               }
             }}
+            onMouseEnter={() => handleMouseEnter(ep.episode_index)}
+            onMouseLeave={handleMouseLeave}
           >
             <span className="explorer-episode-item__idx">#{ep.episode_index}</span>
             <span className="explorer-episode-item__len">{ep.length} frames</span>
           </button>
         ))}
       </div>
+
+      {hoveredEpisodeIndex != null && hoveredPreview && createPortal(
+        <div
+          className="explorer-hover-preview"
+          onMouseEnter={() => {
+            if (closeTimerRef.current) {
+              window.clearTimeout(closeTimerRef.current)
+              closeTimerRef.current = null
+            }
+          }}
+          onMouseLeave={handleMouseLeave}
+        >
+          <button
+            className="explorer-hover-preview__close"
+            onClick={() => {
+              setHoveredEpisodeIndex(null)
+              setHoveredPreview(null)
+              setVideoCurrentTime(0)
+            }}
+          >
+            ×
+          </button>
+
+          <div className="explorer-hover-preview__header">
+            <h3>Episode #{hoveredPreview.episode_index}</h3>
+            <div className="explorer-hover-preview__meta">
+              <span>{hoveredPreview.summary.row_count} frames</span>
+              <span>{hoveredPreview.summary.duration_s}s</span>
+              <span>{hoveredPreview.summary.fps} fps</span>
+            </div>
+          </div>
+
+          {hoveredPreview.videos.length > 0 && (
+            <div className="explorer-hover-preview__video">
+              <video
+                ref={videoRef}
+                src={hoveredPreview.videos[0].url}
+                controls
+                autoPlay
+                muted
+                loop
+                onTimeUpdate={(e) => {
+                  setVideoCurrentTime(e.currentTarget.currentTime)
+                }}
+              />
+            </div>
+          )}
+
+          {hoveredPreview.joint_trajectory && hoveredPreview.joint_trajectory.joint_trajectories.length > 0 && (
+            <div className="explorer-hover-preview__charts">
+              <h4>Joint Trajectories</h4>
+              <div className="explorer-hover-preview__legend">
+                <span className="explorer-hover-preview__legend-state">State</span>
+                <span className="explorer-hover-preview__legend-action">Action</span>
+              </div>
+              {hoveredPreview.joint_trajectory.joint_trajectories.map((joint) => {
+                const timestamps = hoveredPreview.joint_trajectory.time_values
+                const actionValues = joint.action_values
+                const stateValues = joint.state_values
+
+                const allValues = [...actionValues, ...stateValues]
+                const min = Math.min(...allValues)
+                const max = Math.max(...allValues)
+                const range = max - min || 1
+                const padding = range * 0.1
+                const yMin = min - padding
+                const yMax = max + padding
+                const yRange = yMax - yMin
+
+                const toY = (value: number) => {
+                  return 10 + ((yMax - value) / yRange) * 40
+                }
+
+                const actionPoints = actionValues
+                  .map((val, i) => `${(i / (actionValues.length - 1)) * 100},${toY(val)}`)
+                  .join(' ')
+                const statePoints = stateValues
+                  .map((val, i) => `${(i / (stateValues.length - 1)) * 100},${toY(val)}`)
+                  .join(' ')
+
+                const timeMin = timestamps[0]
+                const timeMax = timestamps[timestamps.length - 1]
+                const timeRange = timeMax - timeMin || 1
+                const currentTimePercent = ((videoCurrentTime - timeMin) / timeRange) * 100
+
+                return (
+                  <div key={joint.joint_name} className="explorer-hover-preview__chart">
+                    <div className="explorer-hover-preview__chart-title">{joint.joint_name}</div>
+                    <div className="explorer-hover-preview__chart-container">
+                      <div className="explorer-hover-preview__chart-yaxis">
+                        <span>{yMax.toFixed(2)}</span>
+                        <span>{((yMax + yMin) / 2).toFixed(2)}</span>
+                        <span>{yMin.toFixed(2)}</span>
+                      </div>
+                      <div className="explorer-hover-preview__chart-svg-wrap">
+                        <svg viewBox="0 0 100 60" preserveAspectRatio="none">
+                          <polyline
+                            points={statePoints}
+                            fill="none"
+                            stroke="#2f6fe4"
+                            strokeWidth="0.5"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          <polyline
+                            points={actionPoints}
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="0.5"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                          {videoCurrentTime > 0 && (
+                            <line
+                              x1={currentTimePercent}
+                              y1="10"
+                              x2={currentTimePercent}
+                              y2="50"
+                              stroke="#ef4444"
+                              strokeWidth="0.3"
+                              strokeDasharray="2,2"
+                              vectorEffect="non-scaling-stroke"
+                            />
+                          )}
+                        </svg>
+                        <div className="explorer-hover-preview__chart-xaxis">
+                          <span>{timeMin.toFixed(1)}s</span>
+                          <span>{((timeMin + timeMax) / 2).toFixed(1)}s</span>
+                          <span>{timeMax.toFixed(1)}s</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
 
       {episodeLoading && (
         <div className="explorer-episode-detail">
