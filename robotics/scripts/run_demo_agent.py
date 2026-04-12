@@ -99,6 +99,10 @@ def _new_session_id() -> str:
     return f"cli:{uuid.uuid4().hex[:12]}"
 
 
+def _normalize_provider_name(name: str | None) -> str:
+    return (name or "").strip().lower().replace("-", "_")
+
+
 def _should_exit(command: str) -> bool:
     normalized = re.sub(r"\s+", " ", command.strip().lower())
     if normalized in EXIT_COMMANDS:
@@ -107,10 +111,10 @@ def _should_exit(command: str) -> bool:
 
 
 def _effective_provider_name(config) -> str:
-    provider = config.agents.defaults.provider or "auto"
+    provider = _normalize_provider_name(config.agents.defaults.provider or "auto")
     model = config.agents.defaults.model or ""
     if provider == "auto" and "/" in model:
-        provider = model.split("/", 1)[0]
+        provider = _normalize_provider_name(model.split("/", 1)[0])
     return provider
 
 
@@ -124,7 +128,7 @@ def _apply_demo_env_overrides(config) -> None:
     if env_workspace:
         config.agents.defaults.workspace = env_workspace
     if env_provider:
-        config.agents.defaults.provider = env_provider
+        config.agents.defaults.provider = _normalize_provider_name(env_provider)
     if env_model:
         config.agents.defaults.model = env_model
 
@@ -139,12 +143,17 @@ def _apply_demo_env_overrides(config) -> None:
 
 
 def _ensure_demo_credentials(config) -> bool:
+    from roboclaw.providers.registry import find_by_name
+
     provider_name = _effective_provider_name(config)
     provider_cfg = getattr(config.providers, provider_name, None)
     api_key = getattr(provider_cfg, "api_key", "") if provider_cfg is not None else ""
     api_base = getattr(provider_cfg, "api_base", None) if provider_cfg is not None else None
+    provider_spec = find_by_name(provider_name)
 
     if provider_name in {"ollama", "vllm"}:
+        return True
+    if provider_spec and provider_spec.is_oauth:
         return True
     if provider_name == "custom" and api_base:
         return True

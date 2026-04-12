@@ -8,7 +8,6 @@ bringup and uses ROS 2 CLI calls for reset operations.
 from __future__ import annotations
 
 import os
-import pwd
 import shlex
 import signal
 import subprocess
@@ -344,11 +343,11 @@ class SimulationLifecycle:
         }
 
     def _list_orphan_pids(self) -> list[int]:
-        current_user = pwd.getpwuid(os.getuid()).pw_name
+        current_uid = str(os.getuid())
         tracked_pid = getattr(self._process, "pid", None)
         try:
             completed = subprocess.run(
-                ["ps", "-eo", "pid=,user=,args="],
+                ["ps", "-eo", "pid=,uid=,args="],
                 check=False,
                 capture_output=True,
                 text=True,
@@ -366,8 +365,8 @@ class SimulationLifecycle:
             parts = line.split(None, 2)
             if len(parts) != 3:
                 continue
-            pid_text, user, args = parts
-            if user != current_user:
+            pid_text, uid_text, args = parts
+            if uid_text != current_uid:
                 continue
             try:
                 pid = int(pid_text)

@@ -95,11 +95,6 @@ def test_lifecycle_shutdown_stops_tracked_process(tmp_path, monkeypatch) -> None
     monkeypatch.setattr(lifecycle_module.os, "getpgid", lambda pid: pid)
     monkeypatch.setattr(lifecycle_module.os, "killpg", lambda pgid, sig: calls.append((pgid, sig)))
     monkeypatch.setattr(lifecycle_module.time, "sleep", lambda _: None)
-    monkeypatch.setattr(
-        lifecycle_module.pwd,
-        "getpwuid",
-        lambda uid: SimpleNamespace(pw_name="tester"),
-    )
     monkeypatch.setattr(lifecycle_module.os, "getuid", lambda: 1000)
     monkeypatch.setattr(
         lifecycle_module.subprocess,
@@ -123,25 +118,20 @@ def test_lifecycle_shutdown_cleans_orphaned_simulation_processes(monkeypatch) ->
             SimpleNamespace(
                 returncode=0,
                 stdout=(
-                    "2000 tester /usr/bin/python3 /opt/ros/humble/bin/ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py\n"
-                    "2001 tester /opt/ros/humble/lib/rclcpp_components/component_container_isolated --ros-args -r __node:=nav2_container\n"
+                    "2000 1000 /usr/bin/python3 /opt/ros/humble/bin/ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py\n"
+                    "2001 1000 /opt/ros/humble/lib/rclcpp_components/component_container_isolated --ros-args -r __node:=nav2_container\n"
                 ),
                 stderr="",
             ),
             SimpleNamespace(
                 returncode=0,
-                stdout="2001 tester /opt/ros/humble/lib/rclcpp_components/component_container_isolated --ros-args -r __node:=nav2_container\n",
+                stdout="2001 1000 /opt/ros/humble/lib/rclcpp_components/component_container_isolated --ros-args -r __node:=nav2_container\n",
                 stderr="",
             ),
         ]
     )
 
     monkeypatch.setattr(lifecycle_module.time, "sleep", lambda _: None)
-    monkeypatch.setattr(
-        lifecycle_module.pwd,
-        "getpwuid",
-        lambda uid: SimpleNamespace(pw_name="tester"),
-    )
     monkeypatch.setattr(lifecycle_module.os, "getuid", lambda: 1000)
     monkeypatch.setattr(lifecycle_module.subprocess, "run", lambda *args, **kwargs: next(snapshots))
     monkeypatch.setattr(lifecycle_module.os, "kill", lambda pid, sig: kills.append((pid, sig)))

@@ -52,10 +52,13 @@ def test_demo_python_runner_uses_navigation_demo_loop() -> None:
     assert "NavigationDemoAgentLoop" in content
     assert "Demo navigation mode" in content
     assert '"--verbose"' in content
+    assert "def _normalize_provider_name" in content
     assert "def _should_exit" in content
     assert "re.fullmatch(r\"(?:ok|okay)[,\\s]+(?:exit|quit)\"" in content
     assert "_apply_demo_env_overrides" in content
     assert "_ensure_demo_credentials" in content
+    assert "find_by_name" in content
+    assert "provider_spec.is_oauth" in content
     assert "_configure_demo_logging" in content
     assert 'level="INFO" if verbose else "WARNING"' in content
     assert "getpass.getpass" in content
