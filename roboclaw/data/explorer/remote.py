@@ -20,14 +20,14 @@ import pyarrow.parquet as pq
 from huggingface_hub import HfApi
 from loguru import logger
 
-from roboclaw.http.dashboard_datasets import extract_action_names, extract_state_names
-from roboclaw.http.explorer import (
+from roboclaw.data.datasets import extract_action_names, extract_state_names
+from roboclaw.data.explorer.local import (
     build_explorer_episode_page_from_artifacts,
     build_explorer_overview_from_artifacts,
     build_explorer_payload_from_artifacts,
     build_explorer_summary_from_info,
 )
-from roboclaw.embodied.curation.features import build_joint_trajectory_payload, resolve_timestamp
+from roboclaw.data.curation.features import build_joint_trajectory_payload, resolve_timestamp
 
 _HF_API = HfApi()
 _HF_BASE_URL = os.getenv(

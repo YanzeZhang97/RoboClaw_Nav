@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter
 from loguru import logger
 
-from roboclaw.http.remote_explorer import (
+from roboclaw.data.explorer.remote import (
     build_remote_dataset_info,
     build_remote_episode_page,
     build_remote_explorer_details,

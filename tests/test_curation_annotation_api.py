@@ -11,9 +11,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from roboclaw.http import curation_routes
-from roboclaw.embodied.curation import exports as curation_exports
-from roboclaw.embodied.curation import service as curation_service
-from roboclaw.embodied.curation.state import (
+from roboclaw.data.curation import exports as curation_exports
+from roboclaw.data.curation import service as curation_service
+from roboclaw.data.curation.state import (
     load_workflow_state,
     save_prototype_results,
     save_quality_results,

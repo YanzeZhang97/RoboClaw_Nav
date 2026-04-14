@@ -17,7 +17,7 @@ from huggingface_hub import snapshot_download
 from loguru import logger
 from pydantic import BaseModel
 
-from roboclaw.http.dashboard_datasets import (
+from roboclaw.data.datasets import (
     datasets_root,
     extract_action_names,
     extract_state_names,
@@ -25,8 +25,8 @@ from roboclaw.http.dashboard_datasets import (
     list_datasets,
     resolve_dataset_path,
 )
-from roboclaw.http.remote_explorer import build_remote_dataset_info
-from roboclaw.embodied.curation.exports import (
+from roboclaw.data.explorer.remote import build_remote_dataset_info
+from roboclaw.data.curation.exports import (
     dataset_quality_parquet_path,
     dataset_text_annotations_parquet_path,
     export_quality_csv,
@@ -34,13 +34,13 @@ from roboclaw.embodied.curation.exports import (
     publish_text_annotations_metadata_parquet,
     workflow_quality_parquet_path,
 )
-from roboclaw.embodied.curation.features import (
+from roboclaw.data.curation.features import (
     build_joint_trajectory_payload,
     resolve_task_value,
     resolve_timestamp,
 )
-from roboclaw.embodied.curation.service import CurationService
-from roboclaw.embodied.curation.state import (
+from roboclaw.data.curation.service import CurationService
+from roboclaw.data.curation.state import (
     load_annotations,
     load_propagation_results,
     load_prototype_results,
@@ -50,7 +50,7 @@ from roboclaw.embodied.curation.state import (
     save_workflow_state,
     set_stage_pause_requested,
 )
-from roboclaw.embodied.curation.validators import load_episode_data
+from roboclaw.data.curation.validators import load_episode_data
 
 router = APIRouter(prefix="/api/curation")
 

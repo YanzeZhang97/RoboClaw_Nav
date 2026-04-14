@@ -14,7 +14,7 @@ from loguru import logger
 # Shared path helpers (used by curation_routes, explorer_routes, etc.)
 # ---------------------------------------------------------------------------
 
-from roboclaw.embodied.curation.paths import datasets_root
+from roboclaw.data.curation.paths import datasets_root
 
 
 def resolve_dataset_path(name: str) -> Path:
@@ -48,7 +48,7 @@ def resolve_dataset_path(name: str) -> Path:
 # Feature name extraction (used by curation_routes, explorer_routes, etc.)
 # ---------------------------------------------------------------------------
 
-from roboclaw.embodied.curation.features import extract_action_names, extract_state_names
+from roboclaw.data.curation.features import extract_action_names, extract_state_names
 
 __all__ = ["extract_action_names", "extract_state_names"]
 
