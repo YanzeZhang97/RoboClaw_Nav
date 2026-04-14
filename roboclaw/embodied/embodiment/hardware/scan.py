@@ -179,9 +179,11 @@ def _usb_device_key(by_path_str: str) -> str:
     """Extract physical USB device from by-path.
 
     e.g. "pci-0000:00:14.0-usb-0:3:1.0-video-index0" → "usb-0:3"
-    Different interfaces (1.0, 1.3) on the same port are the same device.
+    e.g. "pci-0000:00:14.0-usb-0:8.2:1.0-video-index0" → "usb-0:8.2"
+    Different interfaces (1.0, 1.3) on the same port are the same device,
+    but different hub sub-ports (8.1, 8.2, 8.3) are different devices.
     """
-    m = re.search(r"(usb-\d+:\d+)", by_path_str)
+    m = re.search(r"(usb-\d+:\d+(?:\.\d+)*)", by_path_str)
     return m.group(1) if m else ""
 
 
