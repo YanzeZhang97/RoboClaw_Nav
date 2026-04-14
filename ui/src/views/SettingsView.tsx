@@ -6,6 +6,7 @@ import { useDashboard } from '../controllers/dashboard'
 import { useI18n } from '../controllers/i18n'
 import DeviceList from '../components/setup/DeviceList'
 import DiscoveryWizard from '../components/setup/DiscoveryWizard'
+import PermissionPanel from '../components/setup/PermissionPanel'
 import { TemperatureHeatMap } from '../components/TemperatureHeatMap'
 import { CalibrationPanel } from '../components/CalibrationPanel'
 import { api, postJson } from '../controllers/api'
@@ -40,7 +41,7 @@ export default function SettingsView() {
   const navigate = useNavigate()
   const { t } = useI18n()
 
-  const { wizardActive, startWizard, loadDevices, loadCatalog } = useSetup()
+  const { wizardActive, startWizard, loadDevices, loadCatalog, checkPermissions, permissions } = useSetup()
   const { fetchHardwareStatus } = useDashboard()
 
   const sessionState = useDashboard((s) => s.session.state)
@@ -80,6 +81,7 @@ export default function SettingsView() {
     loadDevices()
     loadCatalog()
     fetchHardwareStatus()
+    checkPermissions()
 
     const hwInterval = setInterval(() => {
       if (document.visibilityState === 'visible') fetchHardwareStatus()
@@ -212,6 +214,10 @@ export default function SettingsView() {
               </button>
             )}
           </div>
+
+          {permissions && (
+            <PermissionPanel perms={permissions} onFixed={() => checkPermissions()} />
+          )}
 
           <DeviceList onCalibrate={async (alias) => {
             setCalibratingArm(alias)
