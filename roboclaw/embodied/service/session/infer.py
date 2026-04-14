@@ -14,14 +14,12 @@ if TYPE_CHECKING:
     from roboclaw.embodied.service import EmbodiedService
 
 
-# Ordered list of (substring, human-readable stage) tuples — later matches win,
-# so we always reflect the most recent milestone the subprocess has reached.
+# Generic preparation milestones — later matches win so we always show
+# the most recent stage. Keep entries model-agnostic; policy-specific
+# keywords (pi05, openpi, etc.) don't belong here.
 _PREPARE_STAGES: tuple[tuple[str, str], ...] = (
-    ("using video codec", "Preparing dataset"),
-    ("loading checkpoint", "Loading checkpoint shards"),
-    ("safetensors", "Loading checkpoint shards"),
-    ("pi05 model", "Loading PI05 policy weights"),
-    ("openpi", "Loading PI05 policy weights"),
+    ("loading checkpoint", "Loading checkpoint"),
+    ("safetensors", "Loading checkpoint"),
     ("make_policy", "Initializing policy"),
     ("connecting", "Connecting hardware"),
     ("connected", "Hardware connected"),
