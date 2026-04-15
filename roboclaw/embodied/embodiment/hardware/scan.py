@@ -249,7 +249,11 @@ def _dedupe_by_usb_device(cameras: list[VideoInterface]) -> list[VideoInterface]
 
 
 def _try_open_camera(cv2, index: int, dev: str, by_path: dict, by_id: dict) -> VideoInterface | None:
-    """Open a single camera by index, return VideoInterface or None."""
+    """Open a single camera by index, return VideoInterface or None.
+
+    Always attempts MJPG compressed streaming — multiple cameras on the
+    same USB hub cannot share bandwidth with uncompressed YUYV.
+    """
     cap = cv2.VideoCapture(index)
     try:
         if not cap.isOpened():
@@ -257,21 +261,17 @@ def _try_open_camera(cv2, index: int, dev: str, by_path: dict, by_id: dict) -> V
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         real = os.path.realpath(dev)
-        fourcc = ""
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps < 30:
-            cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
-            cap.set(cv2.CAP_PROP_FPS, 30)
-            if cap.get(cv2.CAP_PROP_FPS) >= 30:
-                fourcc = "MJPG"
-                fps = 30
+        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+        cap.set(cv2.CAP_PROP_FPS, 30)
+        fourcc = "MJPG" if cap.get(cv2.CAP_PROP_FPS) >= 30 else ""
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
         return VideoInterface(
             by_path=by_path.get(real, ""),
             by_id=by_id.get(real, ""),
             dev=dev,
             width=w,
             height=h,
-            fps=int(fps),
+            fps=fps or 30,
             fourcc=fourcc,
         )
     finally:
