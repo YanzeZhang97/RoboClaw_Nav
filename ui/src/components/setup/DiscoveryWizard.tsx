@@ -141,32 +141,32 @@ function PortAssignForm({ stableId, roles, model }: {
   return (
     <div className={formBox}>
       {roles.length > 0 && (
-        <>
-          <div className="flex gap-1.5 flex-wrap">
-            {roles.map((r) => (
-              <button key={r} onClick={() => setRole(r)}
-                className={`px-2.5 py-1 text-2xs rounded-md border transition-colors ${
-                  role === r ? 'border-ac bg-ac/5 text-ac font-medium ring-1 ring-ac/20' : 'border-bd/50 text-tx2 hover:border-ac/50'
-                }`}>
-                {r}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-1.5 flex-wrap">
-            {[
-              { key: '', label: '单臂/未指定' },
-              { key: 'left', label: '左臂' },
-              { key: 'right', label: '右臂' },
-            ].map((opt) => (
-              <button key={opt.key || 'none'} onClick={() => setSide(opt.key as 'left' | 'right' | '')}
-                className={`px-2.5 py-1 text-2xs rounded-md border transition-colors ${
-                  side === opt.key ? 'border-ac bg-ac/5 text-ac font-medium ring-1 ring-ac/20' : 'border-bd/50 text-tx2 hover:border-ac/50'
-                }`}>
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </>
+        <div className="flex gap-1.5 flex-wrap">
+          {roles.map((r) => (
+            <button key={r} onClick={() => setRole(r)}
+              className={`px-2.5 py-1 text-2xs rounded-md border transition-colors ${
+                role === r ? 'border-ac bg-ac/5 text-ac font-medium ring-1 ring-ac/20' : 'border-bd/50 text-tx2 hover:border-ac/50'
+              }`}>
+              {r}
+            </button>
+          ))}
+        </div>
+      )}
+      {roles.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap">
+          {[
+            { key: '', label: '单臂/未指定' },
+            { key: 'left', label: '左臂' },
+            { key: 'right', label: '右臂' },
+          ].map((opt) => (
+            <button key={opt.key || 'none'} onClick={() => setSide(opt.key as 'left' | 'right' | '')}
+              className={`px-2.5 py-1 text-2xs rounded-md border transition-colors ${
+                side === opt.key ? 'border-ac bg-ac/5 text-ac font-medium ring-1 ring-ac/20' : 'border-bd/50 text-tx2 hover:border-ac/50'
+              }`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
       )}
       <input value={alias} onChange={(e) => setAlias(e.target.value)}
         placeholder="设备名称" className={inputCls} />

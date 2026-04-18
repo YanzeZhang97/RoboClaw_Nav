@@ -48,7 +48,7 @@ class Binding:
     calibration_dir: str = ""     # arm-specific
     calibrated: bool = False      # arm-specific
     slave_id: int = 0             # hand-specific
-    side: str = ""                # camera-specific: "left" or "right"
+    side: str = ""                # "left"/"right" for bimanual arms and cameras
     _kind: str = field(default="", repr=False)
     _type_name: str = field(default="", repr=False)
 

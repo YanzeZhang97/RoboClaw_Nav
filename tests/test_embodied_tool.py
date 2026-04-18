@@ -624,7 +624,11 @@ def test_resolve_bimanual_pair_rejects_missing_side(tmp_path: Path) -> None:
             },
         ],
     }
-    followers = _manifest_from_data(tmp_path, manifest).arms
+    # Bypass save_manifest's bimanual validation to construct an ambiguous
+    # manifest on disk, then verify runtime pairing rejects it.
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    followers = Manifest(path=path).arms
     with pytest.raises(ActionError, match="one 'left' arm and one 'right' arm"):
         resolve_bimanual_pair(followers, "followers")
 

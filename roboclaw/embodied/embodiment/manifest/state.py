@@ -7,8 +7,9 @@ import os
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
     from roboclaw.embodied.board.board import Board
@@ -118,6 +119,16 @@ class Manifest:
         except BaseException:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+            raise
+
+    @contextmanager
+    def _rollback_bindings_on_error(self) -> Iterator[None]:
+        """Restore the prior ``_bindings`` snapshot if the block raises."""
+        snapshot = dict(self._bindings)
+        try:
+            yield
+        except Exception:
+            self._bindings = snapshot
             raise
 
     def _emit(self, change_type: str, device_alias: str = "") -> None:
@@ -262,7 +273,6 @@ class Manifest:
         _migrate_none_calibration_file(calibration_dir, serial)
 
         with self._lock:
-            existing = self._bindings.get(alias)
             for binding in self._bindings.values():
                 if binding.kind != "arm":
                     continue
@@ -280,15 +290,9 @@ class Manifest:
                 _kind="arm",
                 _type_name=arm_type,
             )
-            self._store_binding(binding)
-            try:
+            with self._rollback_bindings_on_error():
+                self._store_binding(binding)
                 self._persist()
-            except Exception:
-                if existing is None:
-                    self._bindings.pop(alias, None)
-                else:
-                    self._bindings[alias] = existing
-                raise
 
         self._emit("arm_added", alias)
         return binding
@@ -327,14 +331,10 @@ class Manifest:
                 _kind=arm.kind,
                 _type_name=arm.type_name,
             )
-            del self._bindings[old_alias]
-            self._bindings[new_alias] = renamed
-            try:
+            with self._rollback_bindings_on_error():
+                del self._bindings[old_alias]
+                self._bindings[new_alias] = renamed
                 self._persist()
-            except Exception:
-                del self._bindings[new_alias]
-                self._bindings[old_alias] = arm
-                raise
             result = self._snapshot_unlocked()
 
         self._emit("arm_renamed", new_alias)
@@ -355,12 +355,9 @@ class Manifest:
                 _kind=arm.kind,
                 _type_name=arm.type_name,
             )
-            self._bindings[alias] = updated
-            try:
+            with self._rollback_bindings_on_error():
+                self._bindings[alias] = updated
                 self._persist()
-            except Exception:
-                self._bindings[alias] = arm
-                raise
             result = self._snapshot_unlocked()
 
         refresh_bimanual_cal_dirs(result)

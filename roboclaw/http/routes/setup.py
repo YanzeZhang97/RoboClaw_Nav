@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from roboclaw.http.routes._previews import serve_preview_image
+
 SETUP_PREVIEW_DIR = Path("/tmp/roboclaw-camera-previews/setup")
 
 
@@ -104,16 +106,7 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
 
     @app.get("/api/setup/previews/by-key/{preview_key}")
     async def setup_camera_preview_image(preview_key: str):
-        from fastapi.responses import FileResponse
-
-        preview_path = SETUP_PREVIEW_DIR / f"{preview_key}.jpg"
-        if preview_path.exists():
-            return FileResponse(
-                str(preview_path),
-                media_type="image/jpeg",
-                headers={"Cache-Control": "no-store"},
-            )
-        raise HTTPException(404, f"Preview not found for key {preview_key}")
+        return serve_preview_image(SETUP_PREVIEW_DIR, preview_key)
 
     @app.post("/api/setup/motion/start")
     async def motion_start() -> dict[str, Any]:
