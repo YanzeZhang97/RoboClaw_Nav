@@ -99,9 +99,12 @@ const defaultSession: SessionStatus = {
   prepare_stage: '',
 }
 
+type StartKind = Exclude<SessionLoading, `${string}-stop`>
+type StopKind = Extract<SessionLoading, `${string}-stop`>
+
 export const useSessionStore = create<SessionStore>((set, get) => {
   const runStart = async <T extends object | void>(
-    kind: Exclude<SessionLoading, `${string}-stop`>,
+    kind: StartKind,
     url: string,
     body?: T,
   ) => {
@@ -113,11 +116,8 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     }
   }
 
-  const runStop = async (
-    kind: Exclude<SessionLoading, `${string}-stop`>,
-    url: string,
-  ) => {
-    set({ loading: `${kind}-stop` as SessionLoading })
+  const runStop = async (kind: StopKind, url: string) => {
+    set({ loading: kind })
     try {
       await postJson(url)
     } finally {
@@ -143,10 +143,10 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     },
 
     doTeleopStart: (params) => runStart('teleop', `${TELEOP}/start`, params || {}),
-    doTeleopStop: () => runStop('teleop', `${TELEOP}/stop`),
+    doTeleopStop: () => runStop('teleop-stop', `${TELEOP}/stop`),
 
     doRecordStart: (params) => runStart('record', `${RECORD}/start`, params),
-    doRecordStop: () => runStop('record', `${RECORD}/stop`),
+    doRecordStop: () => runStop('record-stop', `${RECORD}/stop`),
 
     doSaveEpisode: async () => {
       await postJson(`${RECORD}/episode/save`)
@@ -161,17 +161,34 @@ export const useSessionStore = create<SessionStore>((set, get) => {
     },
 
     doReplayStart: (params) => runStart('replay', `${REPLAY}/start`, params),
-    doReplayStop: () => runStop('replay', `${REPLAY}/stop`),
+    doReplayStop: () => runStop('replay-stop', `${REPLAY}/stop`),
 
     doInferStart: (params) => runStart('infer', `${INFER}/start`, params),
-    doInferStop: () => runStop('infer', `${INFER}/stop`),
+    doInferStop: () => runStop('infer-stop', `${INFER}/stop`),
 
     handleDashboardEvent: (event) => {
       if (event.type !== 'dashboard.session.state_changed') {
         return
       }
-      const { type: _type, ...payload } = event
-      set({ session: { ...defaultSession, ...payload } })
+      set({
+        session: {
+          state: event.state || 'idle',
+          episode_phase: event.episode_phase || '',
+          saved_episodes: event.saved_episodes ?? 0,
+          current_episode: event.current_episode ?? 0,
+          target_episodes: event.target_episodes ?? 0,
+          total_frames: event.total_frames ?? 0,
+          elapsed_seconds: event.elapsed_seconds ?? 0,
+          dataset: event.dataset || null,
+          rerun_web_port: event.rerun_web_port || 0,
+          error: event.error || '',
+          calibration_step: event.calibration_step || '',
+          calibration_arm: event.calibration_arm || '',
+          calibration_positions: event.calibration_positions || null,
+          embodiment_owner: event.embodiment_owner || '',
+          prepare_stage: event.prepare_stage || '',
+        },
+      })
     },
   }
 })

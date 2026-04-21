@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { api } from '@/shared/api/client'
 
 const HARDWARE = '/api/hardware'
 const SYSTEM = '/api/system'
@@ -59,18 +60,10 @@ export const useHardwareStore = create<HardwareStore>((set) => ({
   networkInfo: null,
 
   fetchHardwareStatus: async () => {
-    const res = await fetch(`${HARDWARE}/status`)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch hardware status: ${res.status}`)
-    }
-    set({ hardwareStatus: await res.json() })
+    set({ hardwareStatus: await api(`${HARDWARE}/status`) })
   },
 
   fetchNetworkInfo: async () => {
-    const res = await fetch(`${SYSTEM}/network`)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch network info: ${res.status}`)
-    }
-    set({ networkInfo: await res.json() })
+    set({ networkInfo: await api(`${SYSTEM}/network`) })
   },
 }))

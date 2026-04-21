@@ -72,29 +72,104 @@ class OperationRequirements:
     require_cameras: bool = False
 
 
-@dataclass(frozen=True)
-class _HardwareContext:
-    """Precomputed arm grouping and status lookup, shared across evaluations."""
+class HardwareContext:
+    """Evaluates capability readiness for the configured arms and cameras.
 
-    followers: list[ArmBinding]
-    leaders: list[ArmBinding]
-    status_by_alias: dict[str, ArmStatus]
-    camera_statuses: list[CameraStatus]
+    Owns the precomputed arm grouping plus status lookup so the six
+    per-operation checks and the global status share a single pass.
+    """
 
-    @classmethod
-    def build(
-        cls,
+    def __init__(
+        self,
         arms: list[ArmBinding],
         arm_statuses: list[ArmStatus],
         camera_statuses: list[CameraStatus],
-    ) -> "_HardwareContext":
+    ) -> None:
         grouped = group_arms(arms)
-        return cls(
-            followers=grouped["followers"],
-            leaders=grouped["leaders"],
-            status_by_alias={status.alias: status for status in arm_statuses},
-            camera_statuses=camera_statuses,
+        self.followers: list[ArmBinding] = grouped["followers"]
+        self.leaders: list[ArmBinding] = grouped["leaders"]
+        self.arm_statuses = arm_statuses
+        self.camera_statuses = camera_statuses
+        self._status_by_alias = {status.alias: status for status in arm_statuses}
+
+    def snapshot(self, *, session_busy: bool) -> HardwareSnapshot:
+        """Assemble the full dashboard-facing status."""
+        global_missing = self.global_missing()
+        return HardwareSnapshot(
+            ready=not global_missing,
+            missing=global_missing,
+            arms=[status.to_dict() for status in self.arm_statuses],
+            cameras=[status.to_dict() for status in self.camera_statuses],
+            session_busy=session_busy,
+            capabilities=ControlCapabilities(
+                teleop=self.evaluate(OperationRequirements(require_leaders=True)),
+                record=self.evaluate(
+                    OperationRequirements(require_leaders=True, require_cameras=True),
+                ),
+                record_without_cameras=self.evaluate(
+                    OperationRequirements(require_leaders=True),
+                ),
+                replay=self.evaluate(OperationRequirements()),
+                infer=self.evaluate(OperationRequirements(require_cameras=True)),
+                infer_without_cameras=self.evaluate(OperationRequirements()),
+            ),
         )
+
+    def evaluate(self, requirements: OperationRequirements) -> OperationCapability:
+        missing = self._role_missing(self.followers, "follower", "followers")
+        if requirements.require_leaders:
+            missing.extend(self._role_missing(self.leaders, "leader", "leaders"))
+            missing.extend(self._pair_count_missing())
+        if requirements.require_cameras:
+            missing.extend(self._required_cameras_missing())
+        return OperationCapability(ready=not missing, missing=missing)
+
+    def global_missing(self) -> list[str]:
+        missing: list[str] = []
+        missing.extend(self._role_missing(self.followers, "follower", "followers"))
+        missing.extend(self._role_missing(self.leaders, "leader", "leaders"))
+        missing.extend(self._disconnected_cameras())
+        missing.extend(self._pair_count_missing())
+        return missing
+
+    def _role_missing(
+        self,
+        arms: list[ArmBinding],
+        singular_name: str,
+        plural_name: str,
+    ) -> list[str]:
+        if not arms:
+            return [f"No {singular_name} arm configured"]
+
+        missing: list[str] = []
+        for arm in arms:
+            status = self._status_by_alias[arm.alias]
+            if not status.connected:
+                missing.append(f"Arm '{status.alias}' is disconnected")
+                continue
+            if not status.calibrated:
+                missing.append(f"Arm '{status.alias}' is not calibrated")
+        missing.extend(_pairing_missing(arms, plural_name))
+        return missing
+
+    def _required_cameras_missing(self) -> list[str]:
+        if not self.camera_statuses:
+            return ["No cameras configured"]
+        return self._disconnected_cameras()
+
+    def _disconnected_cameras(self) -> list[str]:
+        return [
+            f"Camera '{status.alias}' is disconnected"
+            for status in self.camera_statuses
+            if not status.connected
+        ]
+
+    def _pair_count_missing(self) -> list[str]:
+        if self.followers and self.leaders and len(self.followers) != len(self.leaders):
+            return [
+                f"Follower/leader count mismatch: {len(self.followers)} vs {len(self.leaders)}"
+            ]
+        return []
 
 
 def build_hardware_snapshot(
@@ -105,68 +180,9 @@ def build_hardware_snapshot(
     session_busy: bool,
 ) -> HardwareSnapshot:
     """Assemble global status plus per-operation capability states."""
-
-    ctx = _HardwareContext.build(arms, arm_statuses, camera_statuses)
-    capabilities = ControlCapabilities(
-        teleop=_evaluate_operation(ctx, OperationRequirements(require_leaders=True)),
-        record=_evaluate_operation(
-            ctx, OperationRequirements(require_leaders=True, require_cameras=True),
-        ),
-        record_without_cameras=_evaluate_operation(
-            ctx, OperationRequirements(require_leaders=True),
-        ),
-        replay=_evaluate_operation(ctx, OperationRequirements()),
-        infer=_evaluate_operation(ctx, OperationRequirements(require_cameras=True)),
-        infer_without_cameras=_evaluate_operation(ctx, OperationRequirements()),
-    )
-    global_missing = _global_missing(ctx)
-    return HardwareSnapshot(
-        ready=not global_missing,
-        missing=global_missing,
-        arms=[status.to_dict() for status in arm_statuses],
-        cameras=[status.to_dict() for status in camera_statuses],
+    return HardwareContext(arms, arm_statuses, camera_statuses).snapshot(
         session_busy=session_busy,
-        capabilities=capabilities,
     )
-
-
-def _evaluate_operation(
-    ctx: _HardwareContext,
-    requirements: OperationRequirements,
-) -> OperationCapability:
-    missing = _arm_role_missing(ctx.followers, ctx.status_by_alias, "follower", "followers")
-    if requirements.require_leaders:
-        missing.extend(_arm_role_missing(ctx.leaders, ctx.status_by_alias, "leader", "leaders"))
-        if ctx.followers and ctx.leaders and len(ctx.followers) != len(ctx.leaders):
-            missing.append(
-                f"Follower/leader count mismatch: {len(ctx.followers)} vs {len(ctx.leaders)}"
-            )
-
-    if requirements.require_cameras:
-        missing.extend(_camera_missing(ctx.camera_statuses))
-
-    return OperationCapability(ready=not missing, missing=missing)
-
-
-def _arm_role_missing(
-    arms: list[ArmBinding],
-    status_by_alias: dict[str, ArmStatus],
-    singular_name: str,
-    plural_name: str,
-) -> list[str]:
-    if not arms:
-        return [f"No {singular_name} arm configured"]
-
-    missing: list[str] = []
-    for arm in arms:
-        status = status_by_alias[arm.alias]
-        if not status.connected:
-            missing.append(f"Arm '{status.alias}' is disconnected")
-            continue
-        if not status.calibrated:
-            missing.append(f"Arm '{status.alias}' is not calibrated")
-    missing.extend(_pairing_missing(arms, plural_name))
-    return missing
 
 
 def _pairing_missing(arms: list[ArmBinding], role_name: str) -> list[str]:
@@ -179,29 +195,3 @@ def _pairing_missing(arms: list[ArmBinding], role_name: str) -> list[str]:
     except ActionError as exc:
         return [str(exc)]
     return []
-
-
-def _camera_missing(camera_statuses: list[CameraStatus]) -> list[str]:
-    if not camera_statuses:
-        return ["No cameras configured"]
-    return [
-        f"Camera '{status.alias}' is disconnected"
-        for status in camera_statuses
-        if not status.connected
-    ]
-
-
-def _global_missing(ctx: _HardwareContext) -> list[str]:
-    missing: list[str] = []
-    missing.extend(_arm_role_missing(ctx.followers, ctx.status_by_alias, "follower", "followers"))
-    missing.extend(_arm_role_missing(ctx.leaders, ctx.status_by_alias, "leader", "leaders"))
-    missing.extend(
-        f"Camera '{status.alias}' is disconnected"
-        for status in ctx.camera_statuses
-        if not status.connected
-    )
-    if ctx.followers and ctx.leaders and len(ctx.followers) != len(ctx.leaders):
-        missing.append(
-            f"Follower/leader count mismatch: {len(ctx.followers)} vs {len(ctx.leaders)}"
-        )
-    return missing
