@@ -324,7 +324,11 @@ class MotorProber:
             return False
         if abs(pos - s.last_pos) > WRAP_THRESHOLD:
             edge = POSITION_MIN if s.direction < 0 else POSITION_MAX
-            self._finish_probe(edge, "wrap", pos)
+            # Pass s.last_pos (pre-wrap, still valid, near the edge) as actual_pos so
+            # we park the motor inside the valid frame instead of at the bogus wrapped
+            # reading — which would make the multi-turn controller spin a full rotation
+            # back toward "that" position.
+            self._finish_probe(edge, "wrap", s.last_pos)
             return True
         if abs(pos - s.last_pos) < SAT_DELTA:
             s.stalled += 1
@@ -337,8 +341,7 @@ class MotorProber:
                     or abs(travel) < 30
                 )
                 reason = "clamp" if (abs(pos - edge) < CLAMP_EDGE_DIST or not dir_ok) else "real"
-                report_pos = edge if reason == "clamp" and not dir_ok else pos
-                self._finish_probe(report_pos, reason, pos)
+                self._finish_probe(pos, reason, pos)
                 return True
         else:
             s.stalled = 0
@@ -347,8 +350,14 @@ class MotorProber:
 
     def _finish_probe(self, report_pos: int, reason: str, actual_pos: int) -> None:
         s = self._probe
-        # Retreat 50 ticks off a real hardstop so the motor relaxes instead of pinning.
-        if reason == "real":
+        # Park logic:
+        #   real  — retreat 50 ticks off the hardstop so the motor relaxes instead of
+        #           pinning while subsequent probes run.
+        #   wrap  — ``actual_pos`` was remapped to pre-wrap last_pos (near the edge);
+        #           same retreat applies, keeps the motor safely inside the valid frame.
+        #   clamp — stalled against the goal-edge clamp without a real hardstop; park
+        #           exactly there (no retreat).
+        if reason in ("real", "wrap"):
             park_pos = actual_pos - s.direction * RETREAT_TICKS
         else:
             park_pos = actual_pos
