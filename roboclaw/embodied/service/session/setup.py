@@ -12,6 +12,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from roboclaw.embodied.embodiment.hardware.discovery import HardwareDiscovery
+from roboclaw.embodied.embodiment.hardware.motion import resolve_active_motion
 from roboclaw.embodied.embodiment.hardware.scan import restore_stderr, suppress_stderr
 from roboclaw.embodied.embodiment.interface import Interface, SerialInterface, VideoInterface
 from roboclaw.i18n import t
@@ -45,7 +46,7 @@ class Assignment:
     spec_name: str  # e.g. "so101_follower", "inspire_rh56", "opencv"
     interface: Interface
     slave_id: int = 0  # hand-specific, set during assign if needed
-    side: str = ""    # camera-specific: "left" or "right"
+    side: str = ""    # device side: left/right for bimanual, empty for single-arm
 
 
 class SetupSession:
@@ -73,6 +74,7 @@ class SetupSession:
         self._language: str = "en"
         self._messages: list[str] = []
         self._camera_preview: Any = None
+        self._active_motion_stable_id: str = ""
 
     def drain_messages(self) -> list[str]:
         """Return and clear accumulated messages."""
@@ -176,6 +178,7 @@ class SetupSession:
                 iface.motion_detector.capture_baseline()
         finally:
             restore_stderr(saved)
+        self._active_motion_stable_id = ""
         self._phase = SetupPhase.IDENTIFYING
         return len(serial)
 
@@ -185,6 +188,7 @@ class SetupSession:
             for c in self._candidates:
                 if isinstance(c, SerialInterface):
                     c.motion_detector.reset()
+            self._active_motion_stable_id = ""
             self._phase = SetupPhase.ASSIGNING
         self._parent.release_embodiment(owner="motion-detection")
 
@@ -208,7 +212,9 @@ class SetupSession:
                 })
         finally:
             restore_stderr(saved)
-        return results
+        normalized, active_id = resolve_active_motion(results, self._active_motion_stable_id)
+        self._active_motion_stable_id = active_id
+        return normalized
 
     # -- Assign / Commit -----------------------------------------------------
 
@@ -220,6 +226,7 @@ class SetupSession:
 
         For cameras, ``side`` is "left"/"right" for a bimanual robot or "" for
         single-arm. When non-empty the alias must start with ``{side}_``.
+        For arms, ``side`` is optional for single-arm and required for bimanual.
         """
         if self._phase not in (SetupPhase.ASSIGNING, SetupPhase.IDENTIFYING):
             raise RuntimeError(f"Cannot assign in {self._phase} phase.")
@@ -241,6 +248,12 @@ class SetupSession:
                 raise ValueError(
                     f"Camera alias '{alias}' must start with '{side}_'."
                 )
+        else:
+            from roboclaw.embodied.embodiment.arm.registry import all_arm_types
+            from roboclaw.embodied.embodiment.manifest.binding import validate_arm_side
+
+            if spec_name in all_arm_types():
+                validate_arm_side(side, alias)
         assignment = Assignment(
             alias=alias, spec_name=spec_name, interface=interface, side=side,
         )
@@ -257,6 +270,38 @@ class SetupSession:
                 return
         raise ValueError(f"No assignment with alias '{alias}'.")
 
+    def dismiss(self, interface_stable_id: str) -> None:
+        """Remove a pending candidate from the current setup session."""
+        if self._phase not in (SetupPhase.ASSIGNING, SetupPhase.IDENTIFYING):
+            raise RuntimeError(f"Cannot dismiss in {self._phase} phase.")
+
+        interface = next(
+            (candidate for candidate in self.unassigned if candidate.stable_id == interface_stable_id),
+            None,
+        )
+        if interface is None:
+            raise ValueError(
+                f"Interface {interface_stable_id} not found or already assigned."
+            )
+
+        if isinstance(interface, SerialInterface):
+            interface.motion_detector.reset()
+            if self._active_motion_stable_id == interface.stable_id:
+                self._active_motion_stable_id = ""
+
+        self._candidates = [
+            candidate
+            for candidate in self._candidates
+            if candidate.stable_id != interface_stable_id
+        ]
+
+        remaining_serial = any(
+            isinstance(candidate, SerialInterface)
+            for candidate in self.unassigned
+        )
+        if self._phase == SetupPhase.IDENTIFYING and not remaining_serial:
+            self.stop_motion_detection()
+
     def commit(self) -> int:
         """Write all assignments to manifest.
 
@@ -270,6 +315,7 @@ class SetupSession:
         if self._phase == SetupPhase.IDENTIFYING:
             self.stop_motion_detection()
         manifest = self._parent.manifest
+        self._validate_arm_sides_before_commit(manifest)
         for a in self._assignments:
             self._commit_one(manifest, a)
         count = len(self._assignments)
@@ -280,6 +326,7 @@ class SetupSession:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize session state for API responses."""
+        busy = self._parent.busy
         return {
             "phase": self._phase.value,
             "model": self._model,
@@ -292,10 +339,13 @@ class SetupSession:
                     "alias": a.alias,
                     "spec_name": a.spec_name,
                     "interface_stable_id": a.interface.stable_id,
+                    "side": a.side,
                 }
                 for a in self._assignments
             ],
             "unassigned": [c.stable_id for c in self.unassigned],
+            "busy": busy,
+            "busy_reason": self._parent.busy_reason if busy else "",
         }
 
     # -- Prompting protocol (used by TtySession) ----------------------------
@@ -744,6 +794,7 @@ class SetupSession:
         self._camera_pending_side = ""
         self._embodiment_category = ""
         self._messages.clear()
+        self._active_motion_stable_id = ""
         # Note: do NOT reset self._language here — it persists through reset
 
     @staticmethod
@@ -752,7 +803,9 @@ class SetupSession:
         from roboclaw.embodied.embodiment.hand.registry import all_hand_types
 
         if assignment.spec_name in all_arm_types():
-            manifest.set_arm(assignment.alias, assignment.spec_name, assignment.interface)
+            manifest.set_arm(
+                assignment.alias, assignment.spec_name, assignment.interface, side=assignment.side,
+            )
         elif assignment.spec_name in all_hand_types():
             manifest.set_hand(
                 assignment.alias, assignment.spec_name,
@@ -765,4 +818,27 @@ class SetupSession:
         else:
             raise ValueError(f"Unknown spec type: {assignment.spec_name}")
 
+    def _validate_arm_sides_before_commit(self, manifest: Any) -> None:
+        """Reject ambiguous bimanual arm assignments before writing manifest."""
+        from roboclaw.embodied.embodiment.arm.registry import all_arm_types, get_role
+        from roboclaw.embodied.embodiment.manifest.binding import ArmRole
 
+        existing_arms = list(manifest.arms)
+        pending_arms = [
+            assignment for assignment in self._assignments
+            if assignment.spec_name in all_arm_types()
+        ]
+        roles: dict[str, list[str]] = {
+            "followers": [arm.side for arm in existing_arms if arm.role is ArmRole.FOLLOWER],
+            "leaders": [arm.side for arm in existing_arms if arm.role is ArmRole.LEADER],
+        }
+        for assignment in pending_arms:
+            if get_role(assignment.spec_name) == ArmRole.FOLLOWER.value:
+                roles["followers"].append(assignment.side)
+            else:
+                roles["leaders"].append(assignment.side)
+        for role, sides in roles.items():
+            if len(sides) == 2 and set(sides) != {"left", "right"}:
+                raise ValueError(
+                    f"Bimanual {role} require one 'left' arm and one 'right' arm before commit."
+                )

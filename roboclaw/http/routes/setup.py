@@ -12,6 +12,10 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from roboclaw.http.routes._previews import serve_preview_image
+
+SETUP_PREVIEW_DIR = Path("/tmp/roboclaw-camera-previews/setup")
+
 
 class ScanRequest(BaseModel):
     model: str = ""
@@ -22,6 +26,10 @@ class AssignRequest(BaseModel):
     alias: str
     spec_name: str
     side: str = ""
+
+
+class DismissRequest(BaseModel):
+    interface_stable_id: str
 
 
 def _map_service_errors(app: FastAPI) -> None:
@@ -83,24 +91,26 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
     async def setup_camera_previews() -> list[dict]:
         from roboclaw.embodied.service import EmbodimentBusyError
 
-        output_dir = str(Path("/tmp/roboclaw-camera-previews"))
+        output_dir = str(SETUP_PREVIEW_DIR)
         try:
-            return await asyncio.to_thread(
+            previews = await asyncio.to_thread(
                 service.setup.capture_previews, output_dir,
             )
+            return [
+                {
+                    **preview,
+                    "preview_url": f"/api/setup/previews/by-key/{preview['preview_key']}",
+                }
+                for preview in previews
+            ]
         except EmbodimentBusyError:
             raise
         except RuntimeError as exc:
             raise HTTPException(400, str(exc)) from exc
 
-    @app.get("/api/setup/previews/{index}")
-    async def setup_camera_preview_image(index: int):
-        from fastapi.responses import FileResponse
-
-        preview_dir = Path("/tmp/roboclaw-camera-previews")
-        for f in preview_dir.glob(f"{index:02d}_*.jpg"):
-            return FileResponse(str(f), media_type="image/jpeg")
-        raise HTTPException(404, f"Preview not found for camera index {index}")
+    @app.get("/api/setup/previews/by-key/{preview_key}")
+    async def setup_camera_preview_image(preview_key: str):
+        return serve_preview_image(SETUP_PREVIEW_DIR, preview_key)
 
     @app.post("/api/setup/motion/start")
     async def motion_start() -> dict[str, Any]:
@@ -157,6 +167,14 @@ def register_setup_routes(app: FastAPI, service: Any) -> None:
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(400, str(exc)) from exc
         return {"status": "unassigned", "alias": alias}
+
+    @app.post("/api/setup/session/dismiss")
+    async def setup_dismiss(body: DismissRequest) -> dict[str, str]:
+        try:
+            service.setup.dismiss(body.interface_stable_id)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"status": "dismissed", "interface_stable_id": body.interface_stable_id}
 
     @app.post("/api/setup/session/commit")
     async def setup_commit() -> dict[str, Any]:
