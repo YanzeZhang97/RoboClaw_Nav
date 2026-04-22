@@ -156,6 +156,113 @@ def test_simulation_service_bringup_switches_to_nav_only_when_runtime_exists(tmp
     assert loaded["paths"]["map"].endswith("maps/map.yaml")
 
 
+def test_simulation_service_bringup_resolves_house_map_id(tmp_path) -> None:
+    lifecycle = _FakeLifecycle()
+    state_path = tmp_path / "simulation_state.json"
+    service = SimulationService(
+        lifecycle=lifecycle,
+        doctor_runner=lambda profile_id: _manifest(
+            environment_installed=True,
+            runtime_up=False,
+            tf_ready=False,
+            nav_ready=False,
+            decision="blocked",
+        ),
+        state_path=state_path,
+    )
+
+    result = service.bringup(mode="nav", map_id="house")
+
+    assert result["ok"] is True
+    assert result["map"]["selected_map_id"] == "house"
+    assert result["map"]["resolved_map_path"].endswith("maps/map_house.yaml")
+    assert result["map"]["selected_world_launch"] == "turtlebot3_house.launch.py"
+    assert result["map"]["resolved_world_launch"] == "turtlebot3_house.launch.py"
+    assert result["map"]["applied"] is True
+    assert lifecycle.bringup_calls[0]["map_path"].endswith("maps/map_house.yaml")
+    assert lifecycle.bringup_calls[0]["world_launch"] == "turtlebot3_house.launch.py"
+    loaded = load_simulation_state(state_path)
+    assert loaded["paths"]["map_id"] == "house"
+    assert loaded["paths"]["map"].endswith("maps/map_house.yaml")
+    assert loaded["paths"]["world"] == "turtlebot3_house.launch.py"
+
+
+def test_simulation_service_bringup_ignores_empty_map_path_when_map_id_is_set(tmp_path) -> None:
+    lifecycle = _FakeLifecycle()
+    state_path = tmp_path / "simulation_state.json"
+    service = SimulationService(
+        lifecycle=lifecycle,
+        doctor_runner=lambda profile_id: _manifest(
+            environment_installed=True,
+            runtime_up=False,
+            tf_ready=False,
+            nav_ready=False,
+            decision="blocked",
+        ),
+        state_path=state_path,
+    )
+
+    result = service.bringup(mode="nav", map_id="house", map_path="")
+
+    assert result["ok"] is True
+    assert result["map"]["requested_map_id"] == "house"
+    assert result["map"]["explicit_map_path"] is None
+    assert result["map"]["selected_map_id"] == "house"
+    assert result["map"]["resolved_map_path"].endswith("maps/map_house.yaml")
+    assert result["map"]["resolved_world_launch"] == "turtlebot3_house.launch.py"
+    assert lifecycle.bringup_calls[0]["map_path"].endswith("maps/map_house.yaml")
+    assert lifecycle.bringup_calls[0]["world_launch"] == "turtlebot3_house.launch.py"
+
+
+def test_simulation_service_bringup_blocks_house_world_when_runtime_is_unproven(tmp_path) -> None:
+    lifecycle = _FakeLifecycle()
+    state_path = tmp_path / "simulation_state.json"
+    service = SimulationService(
+        lifecycle=lifecycle,
+        doctor_runner=lambda profile_id: _manifest(
+            environment_installed=True,
+            runtime_up=True,
+            tf_ready=False,
+            nav_ready=False,
+            decision="needs_reconfiguration",
+        ),
+        state_path=state_path,
+    )
+
+    result = service.bringup(mode="nav", map_id="house")
+
+    assert result["ok"] is False
+    assert result["already_running"] is True
+    assert result["map"]["selected_map_id"] == "house"
+    assert result["map"]["resolved_world_launch"] == "turtlebot3_house.launch.py"
+    assert result["map"]["applied"] is False
+    assert lifecycle.bringup_calls == []
+
+
+def test_simulation_service_bringup_blocks_unproven_map_switch_when_nav_ready(tmp_path) -> None:
+    lifecycle = _FakeLifecycle()
+    state_path = tmp_path / "simulation_state.json"
+    service = SimulationService(
+        lifecycle=lifecycle,
+        doctor_runner=lambda profile_id: _manifest(
+            environment_installed=True,
+            runtime_up=True,
+            tf_ready=True,
+            nav_ready=True,
+            decision="ready_for_smoke_test",
+        ),
+        state_path=state_path,
+    )
+
+    result = service.bringup(mode="nav", map_id="house")
+
+    assert result["ok"] is False
+    assert result["already_running"] is True
+    assert result["map"]["selected_map_id"] == "house"
+    assert result["map"]["applied"] is False
+    assert lifecycle.bringup_calls == []
+
+
 def test_simulation_service_shutdown_and_reset_delegate(tmp_path) -> None:
     lifecycle = _FakeLifecycle()
     service = SimulationService(

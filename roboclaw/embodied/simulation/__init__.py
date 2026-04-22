@@ -1,6 +1,12 @@
 """Simulation capability checks, profiles, and isolated state helpers."""
 
 from roboclaw.embodied.simulation.lifecycle import SimulationLifecycle
+from roboclaw.embodied.simulation.maps import (
+    DEFAULT_MAP_ID,
+    SimulationMap,
+    get_simulation_map,
+    list_simulation_maps,
+)
 from roboclaw.embodied.simulation.profiles import (
     DEFAULT_PROFILE,
     DEFAULT_PROFILE_ID,
@@ -23,7 +29,9 @@ from roboclaw.embodied.simulation.tool import SimulationToolGroup, create_simula
 __all__ = [
     "DEFAULT_PROFILE",
     "DEFAULT_PROFILE_ID",
+    "DEFAULT_MAP_ID",
     "SimulationLifecycle",
+    "SimulationMap",
     "SimulationProfile",
     "SimulationService",
     "SimulationToolGroup",
@@ -32,7 +40,9 @@ __all__ = [
     "default_profile",
     "default_simulation_state",
     "get_profile",
+    "get_simulation_map",
     "get_simulation_state_path",
+    "list_simulation_maps",
     "list_profiles",
     "load_simulation_state",
     "save_simulation_state",

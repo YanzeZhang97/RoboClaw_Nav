@@ -49,6 +49,12 @@ class SimulationToolGroup(StandaloneTool):
                     "type": "string",
                     "description": "Map path for navigation bringup.",
                 },
+                "map_id": {
+                    "type": "string",
+                    "description": (
+                        "Named map/world id for navigation bringup. Use house for semantic/house navigation demos."
+                    ),
+                },
                 "world_launch": {
                     "type": "string",
                     "description": "Gazebo launch file for turtlebot3_gazebo.",
@@ -91,6 +97,7 @@ class SimulationToolGroup(StandaloneTool):
             result = self._service.bringup(
                 profile_id=kwargs.get("profile_id"),
                 mode=kwargs.get("mode", "nav"),
+                map_id=kwargs.get("map_id"),
                 map_path=kwargs.get("map_path"),
                 world_launch=kwargs.get("world_launch"),
                 model=kwargs.get("model"),

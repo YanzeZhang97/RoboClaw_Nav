@@ -35,11 +35,12 @@ def test_create_simulation_tools_returns_one_group() -> None:
 def test_simulation_tool_dispatches_bringup() -> None:
     tool = SimulationToolGroup(service=_FakeService())
 
-    raw = asyncio.run(tool.execute(action="bringup", mode="nav", rviz=False))
+    raw = asyncio.run(tool.execute(action="bringup", mode="nav", map_id="house", rviz=False))
     data = json.loads(raw)
 
     assert data["action"] == "bringup"
     assert data["kwargs"]["mode"] == "nav"
+    assert data["kwargs"]["map_id"] == "house"
     assert data["kwargs"]["rviz"] is False
 
 

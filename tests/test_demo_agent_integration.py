@@ -21,10 +21,14 @@ def test_main_context_is_restored_without_demo_hooks() -> None:
 
 def test_demo_context_appends_navigation_prompt() -> None:
     content = _read("roboclaw/agent/context_nav.py")
+    prompt = _read("roboclaw/agent/demo_navigation_prompt.py")
 
     assert "NavigationDemoContextBuilder" in content
     assert "DEMO_NAVIGATION_PROMPT" in content
     assert "# Extra System Guidance" in content
+    assert 'map_id="house"' in prompt
+    assert "turtlebot3_house.launch.py" in prompt
+    assert "semantic navigation" in prompt
 
 
 def test_demo_loop_registers_demo_tools_without_arm_embodied_tools() -> None:
