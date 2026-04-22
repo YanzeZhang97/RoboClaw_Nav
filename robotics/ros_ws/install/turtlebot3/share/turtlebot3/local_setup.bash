@@ -1,0 +1,1 @@
+/data/home/yanzezhang/Documents/roboClaw/RoboClaw_Nav/robotics/ros_ws/build/turtlebot3/ament_cmake_environment_hooks/local_setup.bash
