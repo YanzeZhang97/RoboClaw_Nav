@@ -59,6 +59,7 @@ class SemanticPose:
 class SemanticRegion:
     """A polygonal region occupied by a room or place label."""
 
+    region_id: str
     frame_id: str
     polygon: tuple[SemanticPoint, ...]
 
@@ -69,13 +70,20 @@ class SemanticRegion:
         polygon = tuple(SemanticPoint.from_mapping(point) for point in value.get("polygon", []))
         if len(polygon) < 3:
             raise ValueError("semantic region polygon must contain at least 3 points.")
-        return cls(frame_id=str(value.get("frame_id", "map") or "map"), polygon=polygon)
+        return cls(
+            region_id=str(value.get("id", "") or ""),
+            frame_id=str(value.get("frame_id", "map") or "map"),
+            polygon=polygon,
+        )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "frame_id": self.frame_id,
             "polygon": [point.to_dict() for point in self.polygon],
         }
+        if self.region_id:
+            data["id"] = self.region_id
+        return data
 
 
 @dataclass(frozen=True)
@@ -85,7 +93,7 @@ class SemanticPlace:
     place_id: str
     place_type: str
     aliases: tuple[str, ...]
-    region: SemanticRegion | None
+    regions: tuple[SemanticRegion, ...]
     goal_candidates: tuple[SemanticPose, ...]
     preferred_yaw: float
 
@@ -95,16 +103,18 @@ class SemanticPlace:
             raise ValueError("semantic place must be an object.")
         place_id = normalize_place_label(str(_required(value, "id", "semantic place")))
         preferred_yaw = float(value.get("preferred_yaw", 0.0))
-        region_data = value.get("region")
         candidates = tuple(
             SemanticPose.from_mapping(candidate, default_yaw=preferred_yaw)
             for candidate in value.get("goal_candidates", [])
         )
+        regions = _regions_from_mapping(value)
+        if not regions and not candidates:
+            raise ValueError(f"semantic place '{place_id}' requires regions or goal_candidates.")
         return cls(
             place_id=place_id,
             place_type=str(value.get("type", "place") or "place"),
             aliases=tuple(normalize_place_label(alias) for alias in value.get("aliases", [])),
-            region=SemanticRegion.from_mapping(region_data) if region_data is not None else None,
+            regions=regions,
             goal_candidates=candidates,
             preferred_yaw=preferred_yaw,
         )
@@ -119,10 +129,11 @@ class SemanticPlace:
             "type": self.place_type,
             "aliases": list(self.aliases),
             "preferred_yaw": self.preferred_yaw,
+            "region_count": len(self.regions),
             "goal_candidate_count": len(self.goal_candidates),
         }
-        if self.region is not None:
-            data["region"] = self.region.to_dict()
+        if self.regions:
+            data["regions"] = [region.to_dict() for region in self.regions]
         return data
 
 
@@ -201,6 +212,13 @@ def _copy_edge(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError("semantic graph edge must be an object.")
     return dict(value)
+
+
+def _regions_from_mapping(value: dict[str, Any]) -> tuple[SemanticRegion, ...]:
+    regions_data = value.get("regions", [])
+    if not isinstance(regions_data, list):
+        raise ValueError("semantic place field 'regions' must be a list.")
+    return tuple(SemanticRegion.from_mapping(region) for region in regions_data)
 
 
 def _required(mapping: dict[str, Any], key: str, context: str) -> Any:

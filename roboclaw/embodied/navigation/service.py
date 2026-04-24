@@ -64,7 +64,7 @@ class NavigationService:
         goal_y: float | None = None,
         goal_yaw: float = 0.0,
         frame_id: str = "map",
-        feedback: bool = True,
+        feedback: bool = False,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
         doctor = self._simulation.doctor(profile_id=profile_id)
@@ -95,7 +95,7 @@ class NavigationService:
         yaw: float = 0.0,
         frame_id: str = "map",
         behavior_tree: str = "",
-        feedback: bool = True,
+        feedback: bool = False,
         timeout_s: float | None = None,
         profile_id: str | None = None,
     ) -> dict[str, Any]:
@@ -183,7 +183,7 @@ class NavigationService:
         clearance_m: float = DEFAULT_CLEARANCE_M,
         goal_stride_m: float = 0.10,
         behavior_tree: str = "",
-        feedback: bool = True,
+        feedback: bool = False,
         timeout_s: float | None = None,
         profile_id: str | None = None,
     ) -> dict[str, Any]:
@@ -231,7 +231,7 @@ class NavigationService:
         *,
         waypoints: Sequence[Mapping[str, Any]],
         frame_id: str = "map",
-        feedback: bool = True,
+        feedback: bool = False,
         timeout_s: float | None = None,
         profile_id: str | None = None,
     ) -> dict[str, Any]:

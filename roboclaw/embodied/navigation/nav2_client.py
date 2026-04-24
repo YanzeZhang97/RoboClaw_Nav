@@ -96,7 +96,7 @@ class Nav2Client:
         yaw: float = 0.0,
         frame_id: str = "map",
         behavior_tree: str = "",
-        feedback: bool = True,
+        feedback: bool = False,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
         goal = {
@@ -122,7 +122,7 @@ class Nav2Client:
         *,
         poses: Sequence[Mapping[str, Any]],
         frame_id: str = "map",
-        feedback: bool = True,
+        feedback: bool = False,
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
         goal = {

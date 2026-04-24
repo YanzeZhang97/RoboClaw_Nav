@@ -56,15 +56,18 @@ def write_semantic_fixture(tmp_path: Path) -> tuple[Path, Path]:
                         "id": "bedroom",
                         "type": "room",
                         "aliases": ["lower_right_room"],
-                        "region": {
-                            "frame_id": "map",
-                            "polygon": [
-                                {"x": 1.0, "y": 1.0},
-                                {"x": 6.0, "y": 1.0},
-                                {"x": 6.0, "y": 6.0},
-                                {"x": 1.0, "y": 6.0},
-                            ],
-                        },
+                        "regions": [
+                            {
+                                "id": "main",
+                                "frame_id": "map",
+                                "polygon": [
+                                    {"x": 1.0, "y": 1.0},
+                                    {"x": 6.0, "y": 1.0},
+                                    {"x": 6.0, "y": 6.0},
+                                    {"x": 1.0, "y": 6.0},
+                                ],
+                            }
+                        ],
                     }
                 ],
                 "edges": [],
@@ -94,3 +97,28 @@ def test_semantic_graph_resolves_alias(tmp_path: Path) -> None:
     place = graph.resolve_place("lower right room")
 
     assert place.place_id == "bedroom"
+
+
+def test_semantic_graph_supports_multiple_regions(tmp_path: Path) -> None:
+    graph_path, _ = write_semantic_fixture(tmp_path)
+    data = json.loads(graph_path.read_text(encoding="utf-8"))
+    data["places"][0]["regions"].append(
+        {
+            "id": "alcove",
+            "frame_id": "map",
+            "polygon": [
+                {"x": 4.0, "y": 4.0},
+                {"x": 6.0, "y": 4.0},
+                {"x": 6.0, "y": 6.0},
+                {"x": 4.0, "y": 6.0},
+            ],
+        }
+    )
+    graph_path.write_text(json.dumps(data), encoding="utf-8")
+
+    graph = load_semantic_graph(graph_path)
+    place = graph.resolve_place("bedroom")
+    goal = SemanticGoalResolver().resolve(graph=graph, place_label="bedroom")
+
+    assert len(place.regions) == 2
+    assert goal.place_id == "bedroom"

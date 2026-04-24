@@ -6,6 +6,9 @@ from copy import deepcopy
 from typing import Any
 
 
+_OUTPUT_TAIL_CHARS = 800
+
+
 class NavigationEvaluator:
     """Turn raw Nav2 command results into compact structured reports."""
 
@@ -46,8 +49,7 @@ class NavigationEvaluator:
             "metrics": metrics,
             "command": list(command_result.get("command", [])),
             "returncode": command_result.get("returncode"),
-            "stdout": command_result.get("stdout", ""),
-            "stderr": command_result.get("stderr", ""),
+            "output": self._output_summary(command_result),
             "decision": decision,
             "next_steps": next_steps,
         }
@@ -79,3 +81,21 @@ class NavigationEvaluator:
             metrics["goal_status"] = goal_status
         metrics["command_ok"] = bool(command_result.get("ok"))
         return metrics
+
+    @staticmethod
+    def _output_summary(command_result: dict[str, Any]) -> dict[str, Any]:
+        stdout = str(command_result.get("stdout", "") or "")
+        stderr = str(command_result.get("stderr", "") or "")
+        return {
+            "stdout_chars": len(stdout),
+            "stderr_chars": len(stderr),
+            "stdout_tail": _tail(stdout),
+            "stderr_tail": _tail(stderr),
+            "truncated": len(stdout) > _OUTPUT_TAIL_CHARS or len(stderr) > _OUTPUT_TAIL_CHARS,
+        }
+
+
+def _tail(value: str) -> str:
+    if len(value) <= _OUTPUT_TAIL_CHARS:
+        return value
+    return value[-_OUTPUT_TAIL_CHARS:]

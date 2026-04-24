@@ -129,15 +129,18 @@ def _write_semantic_fixture(tmp_path: Path) -> tuple[Path, Path]:
                     {
                         "id": "bedroom",
                         "type": "room",
-                        "region": {
-                            "frame_id": "map",
-                            "polygon": [
-                                {"x": 1.0, "y": 1.0},
-                                {"x": 6.0, "y": 1.0},
-                                {"x": 6.0, "y": 6.0},
-                                {"x": 1.0, "y": 6.0},
-                            ],
-                        },
+                        "regions": [
+                            {
+                                "id": "main",
+                                "frame_id": "map",
+                                "polygon": [
+                                    {"x": 1.0, "y": 1.0},
+                                    {"x": 6.0, "y": 1.0},
+                                    {"x": 6.0, "y": 6.0},
+                                    {"x": 1.0, "y": 6.0},
+                                ],
+                            }
+                        ],
                     }
                 ],
                 "edges": [],
@@ -215,7 +218,7 @@ def test_navigation_service_ignores_blank_semantic_path_overrides() -> None:
     )
 
     result = service.resolve_place(
-        place="bedroom",
+        place="kitchen",
         map_id="house",
         map_path="",
         semantic_graph_path="   ",
@@ -321,6 +324,38 @@ def test_navigation_service_marks_missing_terminal_status_inconclusive() -> None
     assert result["decision"] == "goal_result_inconclusive"
     assert result["metrics"]["goal_accepted"] is True
     assert "goal_status" not in result["metrics"]
+
+
+def test_navigation_service_compacts_long_nav_output() -> None:
+    class _VerboseNavClient(_FakeNavClient):
+        def navigate_to_pose(self, **kwargs):
+            self.navigate_calls.append(kwargs)
+            return {
+                "ok": True,
+                "goal_succeeded": True,
+                "goal_accepted": True,
+                "goal_status": "SUCCEEDED",
+                "goal": {"pose": kwargs},
+                "command": ["ros2", "action", "send_goal", "-f"],
+                "returncode": 0,
+                "stdout": "feedback\n" * 500 + "Goal finished with status: SUCCEEDED\n",
+                "stderr": "warning\n" * 300,
+                "metrics": {"number_of_recoveries": 0},
+            }
+
+    service = NavigationService(
+        simulation_service=_FakeSimulationService(_doctor_result()),
+        nav_client=_VerboseNavClient(),
+    )
+
+    result = service.navigate_to_pose(x=1.0, y=2.0)
+
+    assert result["ok"] is True
+    assert "stdout" not in result
+    assert "stderr" not in result
+    assert result["output"]["truncated"] is True
+    assert result["output"]["stdout_chars"] > len(result["output"]["stdout_tail"])
+    assert len(result["output"]["stdout_tail"]) <= 800
 
 
 def test_navigation_service_cancel_nav_delegates_to_client() -> None:

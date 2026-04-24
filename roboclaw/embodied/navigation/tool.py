@@ -95,7 +95,7 @@ class NavigationToolGroup(StandaloneTool):
                 },
                 "feedback": {
                     "type": "boolean",
-                    "description": "Whether to stream ROS action feedback through CLI.",
+                    "description": "Whether to request ROS action feedback from the CLI. Defaults to false.",
                 },
                 "timeout_s": {
                     "type": "number",
@@ -134,7 +134,7 @@ class NavigationToolGroup(StandaloneTool):
                 goal_y=kwargs.get("y"),
                 goal_yaw=float(kwargs.get("yaw", 0.0)),
                 frame_id=kwargs.get("frame_id", "map"),
-                feedback=kwargs.get("feedback", True),
+                feedback=kwargs.get("feedback", False),
                 timeout_s=kwargs.get("timeout_s"),
             )
         elif action == "navigate_to_pose":
@@ -147,7 +147,7 @@ class NavigationToolGroup(StandaloneTool):
                 yaw=float(kwargs.get("yaw", 0.0)),
                 frame_id=kwargs.get("frame_id", "map"),
                 behavior_tree=kwargs.get("behavior_tree", ""),
-                feedback=kwargs.get("feedback", True),
+                feedback=kwargs.get("feedback", False),
                 timeout_s=kwargs.get("timeout_s"),
             )
         elif action == "resolve_place":
@@ -173,7 +173,7 @@ class NavigationToolGroup(StandaloneTool):
                 clearance_m=float(kwargs.get("clearance_m", 0.25)),
                 goal_stride_m=float(kwargs.get("goal_stride_m", 0.10)),
                 behavior_tree=kwargs.get("behavior_tree", ""),
-                feedback=kwargs.get("feedback", True),
+                feedback=kwargs.get("feedback", False),
                 timeout_s=kwargs.get("timeout_s"),
             )
         elif action == "follow_waypoints":
@@ -183,7 +183,7 @@ class NavigationToolGroup(StandaloneTool):
                 profile_id=kwargs.get("profile_id"),
                 waypoints=kwargs.get("waypoints", []),
                 frame_id=kwargs.get("frame_id", "map"),
-                feedback=kwargs.get("feedback", True),
+                feedback=kwargs.get("feedback", False),
                 timeout_s=kwargs.get("timeout_s"),
             )
         elif action == "cancel_nav":

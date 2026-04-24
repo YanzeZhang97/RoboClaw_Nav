@@ -52,6 +52,15 @@ def test_navigation_tool_dispatches_navigate_to_pose() -> None:
     assert data["kwargs"]["feedback"] is False
 
 
+def test_navigation_tool_defaults_feedback_to_false() -> None:
+    tool = NavigationToolGroup(service=_FakeNavigationService())
+
+    raw = asyncio.run(tool.execute(action="navigate_to_pose", x=1.25, y=-0.5))
+    data = json.loads(raw)
+
+    assert data["kwargs"]["feedback"] is False
+
+
 def test_navigation_tool_dispatches_navigate_to_place() -> None:
     tool = NavigationToolGroup(service=_FakeNavigationService())
 

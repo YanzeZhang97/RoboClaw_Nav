@@ -11,6 +11,7 @@ from roboclaw.embodied.navigation.semantic_graph import (
     SemanticGraph,
     SemanticPlace,
     SemanticPoint,
+    SemanticRegion,
     SemanticPose,
 )
 
@@ -140,9 +141,9 @@ class SemanticGoalResolver:
         explicit = self._explicit_candidate(place, grid, clearance_m)
         if explicit is not None:
             return explicit
-        if place.region is None:
-            raise ValueError(f"Semantic place '{place.place_id}' has no region or clear goal candidates.")
-        pose = self._region_candidate(place, grid, clearance_m, goal_stride_m)
+        if not place.regions:
+            raise ValueError(f"Semantic place '{place.place_id}' has no regions or clear goal candidates.")
+        pose = self._regions_candidate(place, grid, clearance_m, goal_stride_m)
         return SemanticGoal(
             place_id=place.place_id,
             place_type=place.place_type,
@@ -169,15 +170,41 @@ class SemanticGoalResolver:
         return None
 
     @staticmethod
-    def _region_candidate(
+    def _regions_candidate(
         place: SemanticPlace,
         grid: OccupancyGridMap,
         clearance_m: float,
         goal_stride_m: float,
     ) -> SemanticPose:
-        if place.region is None:
-            raise ValueError(f"Semantic place '{place.place_id}' has no region.")
-        polygon = place.region.polygon
+        best: tuple[float, SemanticPose] | None = None
+        for region in place.regions:
+            candidate = SemanticGoalResolver._region_candidate(
+                region=region,
+                preferred_yaw=place.preferred_yaw,
+                grid=grid,
+                clearance_m=clearance_m,
+                goal_stride_m=goal_stride_m,
+            )
+            if candidate is not None and (best is None or candidate[0] < best[0]):
+                best = candidate
+
+        if best is None:
+            raise ValueError(
+                f"No clear goal found inside semantic place '{place.place_id}' "
+                f"with clearance {clearance_m:.2f} m."
+            )
+        return best[1]
+
+    @staticmethod
+    def _region_candidate(
+        *,
+        region: SemanticRegion,
+        preferred_yaw: float,
+        grid: OccupancyGridMap,
+        clearance_m: float,
+        goal_stride_m: float,
+    ) -> tuple[float, SemanticPose] | None:
+        polygon = region.polygon
         centroid = _polygon_centroid(polygon)
         stride = max(1, round(goal_stride_m / grid.resolution))
         col_min, row_min, col_max, row_max = _polygon_pixel_bounds(polygon, grid)
@@ -194,18 +221,13 @@ class SemanticGoalResolver:
                 pose = SemanticPose(
                     x=x,
                     y=y,
-                    yaw=place.preferred_yaw,
-                    frame_id=place.region.frame_id,
+                    yaw=preferred_yaw,
+                    frame_id=region.frame_id,
                 )
                 if best is None or score < best[0]:
                     best = (score, pose)
 
-        if best is None:
-            raise ValueError(
-                f"No clear goal found inside semantic place '{place.place_id}' "
-                f"with clearance {clearance_m:.2f} m."
-            )
-        return best[1]
+        return best
 
 
 def _polygon_centroid(polygon: tuple[SemanticPoint, ...]) -> SemanticPoint:

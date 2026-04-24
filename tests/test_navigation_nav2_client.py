@@ -34,6 +34,24 @@ def test_nav2_client_navigate_to_pose_builds_goal_and_parses_feedback(tmp_path) 
     assert "/navigate_to_pose" in seen["argv"][2]
 
 
+def test_nav2_client_does_not_request_feedback_by_default(tmp_path) -> None:
+    seen = {}
+
+    def shell_runner(argv, cwd, env, timeout_s):
+        seen["argv"] = argv
+        return CommandResult(
+            0,
+            "Goal accepted with ID: 123\nGoal finished with status: SUCCEEDED\n",
+            "",
+        )
+
+    client = Nav2Client(repo_root=tmp_path, shell_runner=shell_runner)
+    result = client.navigate_to_pose(x=1.5, y=-0.25)
+
+    assert result["goal_succeeded"] is True
+    assert " -f " not in f" {seen['argv'][2]} "
+
+
 def test_nav2_client_follow_waypoints_parses_waypoint_feedback(tmp_path) -> None:
     client = Nav2Client(
         repo_root=tmp_path,
