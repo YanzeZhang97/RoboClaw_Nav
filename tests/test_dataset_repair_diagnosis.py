@@ -32,6 +32,17 @@ def _write_info(dataset_dir: Path, **overrides: object) -> None:
     (meta_dir / "info.json").write_text(json.dumps(info), encoding="utf-8")
 
 
+def _write_rlt_info(dataset_dir: Path, **overrides: object) -> None:
+    _write_info(
+        dataset_dir,
+        rlt_episode_metadata_fields={
+            "rl_intervals": "List of {start_frame, end_frame, outcome} for each RL phase.",
+            "human_intervention_intervals": "List of {start_frame, end_frame} for each human intervention segment.",
+        },
+        **overrides,
+    )
+
+
 def _write_recovery(dataset_dir: Path, count: int) -> None:
     rows = [json.dumps({"observation.state": [float(index), float(index + 1)]}) for index in range(count)]
     (dataset_dir / "recovery_frames.jsonl").write_text("\n".join(rows) + "\n", encoding="utf-8")
@@ -67,7 +78,7 @@ def _write_video(dataset_dir: Path, episode_index: int = 0, camera: str = "obser
 class TestDatasetDiagnosis:
     def test_tmp_videos_stuck_wins_before_crash_no_save(self, tmp_path: Path) -> None:
         dataset_dir = tmp_path / "tmp_stuck"
-        _write_info(dataset_dir, total_episodes=0, total_frames=0)
+        _write_rlt_info(dataset_dir, total_episodes=0, total_frames=0)
         _write_recovery(dataset_dir, 2)
         tmp_dir = dataset_dir / "tmpabc"
         tmp_dir.mkdir(parents=True)
@@ -78,9 +89,24 @@ class TestDatasetDiagnosis:
         assert diagnosis.damage_type is DamageType.TMP_VIDEOS_STUCK
         assert diagnosis.repairable is True
 
+    def test_plain_dataset_detects_tmp_videos_stuck_without_recovery(self, tmp_path: Path) -> None:
+        dataset_dir = tmp_path / "plain_tmp_stuck"
+        _write_info(dataset_dir, total_episodes=0, total_frames=0)
+        tmp_dir = dataset_dir / "tmpabc"
+        tmp_dir.mkdir(parents=True)
+        (tmp_dir / "observation.images.front_000.mp4").write_bytes(b"mp4")
+
+        diagnosis = diagnose_dataset(dataset_dir)
+
+        assert diagnosis.damage_type is DamageType.TMP_VIDEOS_STUCK
+        assert diagnosis.repairable is False
+        assert diagnosis.details["records_critical_phase_intervals"] is False
+        assert diagnosis.details["n_recovery_lines"] == 0
+        assert diagnosis.details["n_tmp_videos"] == 1
+
     def test_missing_cp_detected_from_log_when_data_present(self, tmp_path: Path) -> None:
         dataset_dir = tmp_path / "missing_cp"
-        _write_info(dataset_dir)
+        _write_rlt_info(dataset_dir)
         _write_parquet(dataset_dir, 3)
         _write_images(dataset_dir, 3)
         _write_video(dataset_dir)
@@ -96,7 +122,7 @@ class TestDatasetDiagnosis:
 
     def test_frame_mismatch_uses_smallest_available_count(self, tmp_path: Path) -> None:
         dataset_dir = tmp_path / "frame_mismatch"
-        _write_info(dataset_dir, total_frames=4)
+        _write_rlt_info(dataset_dir, total_frames=4)
         _write_recovery(dataset_dir, 4)
         _write_images(dataset_dir, 3)
         _write_parquet(dataset_dir, 2)
@@ -106,3 +132,34 @@ class TestDatasetDiagnosis:
 
         assert diagnosis.damage_type is DamageType.FRAME_MISMATCH
         assert diagnosis.details["truncate_target_frames"] == 2
+
+    def test_plain_dataset_ignores_recovery_frame_mismatch(self, tmp_path: Path) -> None:
+        dataset_dir = tmp_path / "plain_with_recovery_artifacts"
+        _write_info(dataset_dir, total_frames=3)
+        _write_recovery(dataset_dir, 4)
+        _write_images(dataset_dir, 3)
+        _write_parquet(dataset_dir, 3)
+        _write_video(dataset_dir)
+
+        diagnosis = diagnose_dataset(dataset_dir)
+
+        assert diagnosis.damage_type is DamageType.HEALTHY
+        assert diagnosis.details["records_critical_phase_intervals"] is False
+        assert diagnosis.details["n_recovery_lines"] == 0
+
+    def test_plain_dataset_ignores_cp_log(self, tmp_path: Path) -> None:
+        dataset_dir = tmp_path / "plain_missing_cp"
+        _write_info(dataset_dir)
+        _write_parquet(dataset_dir, 3)
+        _write_images(dataset_dir, 3)
+        _write_video(dataset_dir)
+        (dataset_dir.parent / "plain_missing_cp.log").write_text(
+            "[CP] END at episode 0, frame 2 (segment: 1-2, 1 frames, outcome=success)\n",
+            encoding="utf-8",
+        )
+
+        diagnosis = diagnose_dataset(dataset_dir)
+
+        assert diagnosis.damage_type is DamageType.HEALTHY
+        assert diagnosis.details["records_critical_phase_intervals"] is False
+        assert diagnosis.details["log_path"] is None

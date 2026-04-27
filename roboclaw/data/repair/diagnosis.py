@@ -42,6 +42,11 @@ def has_frame_mismatch(recovery_count: int, images_per_camera: dict[str, int]) -
     return any(count != recovery_count for count in images_per_camera.values())
 
 
+def records_critical_phase_intervals(info: dict[str, Any]) -> bool:
+    fields = info.get("rlt_episode_metadata_fields")
+    return isinstance(fields, dict) and "rl_intervals" in fields
+
+
 def truncate_target_frames(n_recovery_lines: int, image_floor: int, n_parquet_rows: int) -> int:
     candidates = [value for value in [n_recovery_lines, image_floor, n_parquet_rows] if value > 0]
     return min(candidates) if candidates else 0
@@ -72,22 +77,23 @@ def _classify_damage(
     video_keys: list[str],
     tmp_videos: dict[str, Path],
     images_per_camera: dict[str, int],
-    has_cp: bool,
+    records_cp_intervals: bool,
+    has_cp_intervals: bool,
     log_cp_intervals: list[dict[str, Any]],
 ) -> DamageType:
     if total_episodes == 0 and n_parquet_rows == 0 and n_recovery_lines == 0 and image_floor == 0 and not tmp_videos:
         return DamageType.EMPTY_SHELL
-    if n_video_files == 0 and tmp_videos and n_recovery_lines > 0:
+    if n_video_files == 0 and tmp_videos:
         return DamageType.TMP_VIDEOS_STUCK
-    if n_parquet_rows == 0 and n_video_files == 0 and (n_recovery_lines > 0 or image_floor > 0):
+    if records_cp_intervals and n_parquet_rows == 0 and n_video_files == 0 and (n_recovery_lines > 0 or image_floor > 0):
         return DamageType.CRASH_NO_SAVE
     if n_parquet_rows > 0 and n_video_files == 0 and video_keys:
         return DamageType.PARQUET_NO_VIDEO
     if total_episodes == 0 and n_parquet_rows > 0 and n_video_files > 0:
         return DamageType.META_STALE
-    if has_frame_mismatch(n_recovery_lines, images_per_camera):
+    if records_cp_intervals and has_frame_mismatch(n_recovery_lines, images_per_camera):
         return DamageType.FRAME_MISMATCH
-    if not has_cp and log_cp_intervals and n_parquet_rows > 0:
+    if records_cp_intervals and not has_cp_intervals and log_cp_intervals and n_parquet_rows > 0:
         return DamageType.MISSING_CP
     return DamageType.HEALTHY
 
@@ -97,20 +103,22 @@ class DatasetDiagnosisService:
         info = load_info(dataset_dir)
         total_episodes = int(info.get("total_episodes", 0))
         total_frames = int(info.get("total_frames", 0))
-        n_recovery_lines = len(read_recovery_rows(dataset_dir))
+        records_cp_intervals = records_critical_phase_intervals(info)
+        n_recovery_lines = len(read_recovery_rows(dataset_dir)) if records_cp_intervals else 0
         images_per_camera = count_images_per_camera(dataset_dir)
         image_floor = min_images_per_camera(images_per_camera)
         n_parquet_files, _episode_count, n_parquet_rows = scan_parquet_files(dataset_dir)
         n_video_files = count_video_files(dataset_dir)
         video_keys = get_video_keys(info)
         tmp_videos = find_tmp_videos(dataset_dir)
-        has_cp = (dataset_dir / "critical_phase_intervals.json").exists()
-        log_path = find_log_for_dataset(dataset_dir)
-        log_cp_intervals = parse_cp_from_log(log_path) if log_path and not has_cp else []
+        has_cp_intervals = records_cp_intervals and (dataset_dir / "critical_phase_intervals.json").exists()
+        log_path = find_log_for_dataset(dataset_dir) if records_cp_intervals else None
+        log_cp_intervals = parse_cp_from_log(log_path) if log_path and not has_cp_intervals else []
 
         details: dict[str, Any] = {
             "info_total_episodes": total_episodes,
             "info_total_frames": total_frames,
+            "records_critical_phase_intervals": records_cp_intervals,
             "n_recovery_lines": n_recovery_lines,
             "images_per_camera": images_per_camera,
             "min_images_per_camera": image_floor,
@@ -125,7 +133,7 @@ class DatasetDiagnosisService:
                 image_floor=image_floor,
                 n_parquet_rows=n_parquet_rows,
             ),
-            "has_cp": has_cp,
+            "has_cp": has_cp_intervals,
             "n_log_cp": len(log_cp_intervals),
             "log_cp_intervals": log_cp_intervals,
             "log_path": log_path,
@@ -140,7 +148,8 @@ class DatasetDiagnosisService:
             video_keys=video_keys,
             tmp_videos=tmp_videos,
             images_per_camera=images_per_camera,
-            has_cp=has_cp,
+            records_cp_intervals=records_cp_intervals,
+            has_cp_intervals=has_cp_intervals,
             log_cp_intervals=log_cp_intervals,
         )
         return DiagnosisResult(
