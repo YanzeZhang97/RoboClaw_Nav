@@ -7,7 +7,7 @@ import threading
 from typing import Any
 
 from roboclaw.data.datasets import DatasetCatalog, datasets_root_from_manifest
-from roboclaw.embodied.board import Board, Command
+from roboclaw.embodied.board import Board
 from roboclaw.embodied.board.board import IDLE_STATE
 from roboclaw.embodied.calibration import AutoCalibrationBatch
 from roboclaw.embodied.command import CommandBuilder
@@ -342,15 +342,15 @@ class EmbodiedService:
 
     async def save_episode(self) -> None:
         if self._active_operation is self.record:
-            self.board.post_command(Command.SAVE_EPISODE)
+            await self.record.request_save_episode()
 
     async def discard_episode(self) -> None:
         if self._active_operation is self.record:
-            self.board.post_command(Command.DISCARD_EPISODE)
+            await self.record.request_discard_episode()
 
     async def skip_reset(self) -> None:
         if self._active_operation is self.record:
-            self.board.post_command(Command.SKIP_RESET)
+            await self.record.request_skip_reset()
 
     # -- Calibration (web) --
 

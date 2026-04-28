@@ -11,7 +11,6 @@ import time
 import tty
 from collections.abc import Callable
 from types import TracebackType
-from typing import Any
 
 
 class TTYKeyboardListener:
@@ -71,6 +70,10 @@ class TTYKeyboardListener:
 
     def _consume_pending(self, pending: str) -> str:
         while pending:
+            if pending[0].lower() == "p":
+                self._on_press("p")
+                pending = pending[1:]
+                continue
             if pending.startswith("\x1b[C"):
                 self._on_press("right")
                 pending = pending[3:]
@@ -116,22 +119,23 @@ def apply_headless_patch() -> None:
             "exit_early": False,
             "rerecord_episode": False,
             "stop_recording": False,
+            "skip_reset": False,
         }
 
         def on_press(key: str) -> None:
             if key == "right":
-                print("Right arrow key pressed. Exiting loop...")
                 events["exit_early"] = True
                 return
             if key == "left":
-                print("Left arrow key pressed. Exiting loop and rerecord the last episode...")
                 events["rerecord_episode"] = True
                 events["exit_early"] = True
                 return
             if key == "esc":
-                print("Escape key pressed. Stopping data recording...")
                 events["stop_recording"] = True
                 events["exit_early"] = True
+                return
+            if key == "p":
+                events["skip_reset"] = True
 
         listener = TTYKeyboardListener(on_press)
         listener.start()
@@ -139,53 +143,3 @@ def apply_headless_patch() -> None:
 
     control_utils.init_keyboard_listener = init_keyboard_listener
     control_utils.is_headless = lambda: not sys.stdin.isatty()
-
-
-def apply_record_loop_patch(record_module: Any) -> None:
-    """Guard LeRobot record loops against stale skip-reset key events."""
-
-    original = record_module.record_loop
-    if getattr(original, "_roboclaw_skip_reset_guard", False):
-        return
-
-    def guarded_record_loop(*args: Any, **kwargs: Any) -> Any:
-        events, dataset = _record_loop_context(kwargs)
-        is_reset_loop = dataset is None
-        _clear_stale_episode_exit(is_reset_loop, events)
-        try:
-            return original(*args, **kwargs)
-        except ConnectionError:
-            if is_reset_loop and _skip_reset_requested(events):
-                # Normal reset-loop skip consumes this flag before breaking.
-                events["exit_early"] = False
-                return None
-            raise
-
-    guarded_record_loop._roboclaw_skip_reset_guard = True
-    record_module.record_loop = guarded_record_loop
-
-
-def _clear_stale_episode_exit(is_reset_loop: bool, events: Any) -> None:
-    if is_reset_loop or not isinstance(events, dict):
-        return
-    if not events.get("exit_early"):
-        return
-    if events.get("rerecord_episode") or events.get("stop_recording"):
-        return
-    events["exit_early"] = False
-
-
-def _record_loop_context(kwargs: dict[str, Any]) -> tuple[Any, Any]:
-    if "events" not in kwargs:
-        raise RuntimeError("RoboClaw record_loop patch requires LeRobot keyword argument 'events'.")
-    return kwargs["events"], kwargs.get("dataset")
-
-
-def _skip_reset_requested(events: Any) -> bool:
-    if not isinstance(events, dict):
-        return False
-    return (
-        bool(events.get("exit_early"))
-        and not events.get("rerecord_episode")
-        and not events.get("stop_recording")
-    )
