@@ -36,13 +36,12 @@ if "roboclaw.embodied.embodiment.doctor" not in sys.modules:
     doctor_mod.DoctorService = DoctorService
     sys.modules["roboclaw.embodied.embodiment.doctor"] = doctor_mod
 
-from roboclaw.embodied.embodiment.lock import EmbodimentFileLock
 from roboclaw.embodied.embodiment.hardware.monitor import ArmStatus, CameraStatus
 from roboclaw.embodied.embodiment.interface.serial import SerialInterface
 from roboclaw.embodied.embodiment.interface.video import VideoInterface
+from roboclaw.embodied.embodiment.lock import EmbodimentFileLock
 from roboclaw.embodied.embodiment.manifest import Manifest
 from roboclaw.embodied.service import EmbodiedService
-
 
 _MANIFEST_DATA = {
     "version": 2,

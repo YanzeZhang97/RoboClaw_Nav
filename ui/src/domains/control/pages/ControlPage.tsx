@@ -107,7 +107,7 @@ export default function ControlPage() {
   const loadPolicies = useTrainingStore((state) => state.loadPolicies)
   const { t } = useI18n()
   const navigate = useNavigate()
-  const { state, episode_phase: episodePhase, saved_episodes: savedEpisodes, target_episodes: targetEpisodes, embodiment_owner: owner, prepare_stage: prepareStage } = session
+  const { state, record_phase: recordPhase, record_pending_command: recordPendingCommand, saved_episodes: savedEpisodes, target_episodes: targetEpisodes, embodiment_owner: owner, prepare_stage: prepareStage } = session
   const teleopStopping = loading === 'teleop-stop' || (state === 'stopping' && owner === 'teleop')
   const recordStopping = loading === 'record-stop' || (state === 'stopping' && owner === 'recording')
   const replayStopping = loading === 'replay-stop' || (state === 'stopping' && owner === 'replaying')
@@ -581,26 +581,26 @@ export default function ControlPage() {
                   />
                 </div>
                 <div className="flex gap-2 mt-3">
-                  <ActionBtn color="gn" disabled={episodePhase !== 'recording'} onClick={() => { void doSaveEpisode() }}>
-                    {episodePhase === 'saving' ? t('episodeSaving') : t('saveEpisode')}
+                  <ActionBtn color="gn" disabled={recordPhase !== 'recording' || !!recordPendingCommand} onClick={() => { void doSaveEpisode() }}>
+                    {recordPhase === 'save_requested' ? t('episodeSaving') : t('saveEpisode')}
                   </ActionBtn>
-                  <ActionBtn color="yl" disabled={episodePhase !== 'recording'} onClick={() => { void doDiscardEpisode() }}>
+                  <ActionBtn color="yl" disabled={recordPhase !== 'recording' || !!recordPendingCommand} onClick={() => { void doDiscardEpisode() }}>
                     {t('discardEpisode')}
                   </ActionBtn>
-                  {episodePhase === 'resetting' && (
-                    <ActionBtn color="ac" onClick={() => { void doSkipReset() }}>
+                  {recordPhase === 'resetting' && (
+                    <ActionBtn color="ac" disabled={!!recordPendingCommand} onClick={() => { void doSkipReset() }}>
                       {t('skipReset')}
                     </ActionBtn>
                   )}
                 </div>
                 <div className="mt-2 flex items-center gap-2 text-xs font-medium">
-                  {(episodePhase === 'recording' || !episodePhase) && (
+                  {(recordPhase === 'recording' || recordPhase === 'preparing' || recordPhase === 'idle') && (
                     <><span className="w-2 h-2 rounded-full bg-ac animate-pulse" /><span className="text-ac">{t('stateRecording')}</span></>
                   )}
-                  {episodePhase === 'saving' && (
+                  {recordPhase === 'save_requested' && (
                     <><span className="w-2 h-2 rounded-full bg-yl animate-pulse" /><span className="text-yl">{t('episodeSaving')}</span></>
                   )}
-                  {episodePhase === 'resetting' && (
+                  {(recordPhase === 'resetting' || recordPhase === 'skip_reset_requested') && (
                     <><span className="w-2 h-2 rounded-full bg-yl animate-pulse" /><span className="text-yl">{t('episodeResetting')}</span></>
                   )}
                 </div>
