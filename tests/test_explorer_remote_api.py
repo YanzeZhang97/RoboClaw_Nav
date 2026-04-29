@@ -248,6 +248,33 @@ def test_viewer_fetch_episode_rows_paginates(monkeypatch: pytest.MonkeyPatch) ->
     assert len(requested_urls) == 2
 
 
+def test_viewer_fetch_episode_rows_stays_under_viewer_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested_urls: list[str] = []
+
+    def _fake_viewer_fetch_json(url: str) -> dict:
+        requested_urls.append(url)
+        if "offset=0&length=100" in url:
+            return {"rows": [{"row": {"index": index}} for index in range(100)]}
+        if "offset=100&length=1" in url:
+            return {"rows": [{"row": {"index": 100}}]}
+        return {"rows": []}
+
+    monkeypatch.setattr(remote_explorer, "_viewer_fetch_json", _fake_viewer_fetch_json)
+
+    rows = remote_explorer._viewer_fetch_episode_rows(
+        "org/dataset",
+        "default",
+        "train",
+        7,
+        length=101,
+    )
+
+    assert len(rows) == 101
+    assert len(requested_urls) == 2
+
+
 def test_shared_episode_returns_preview_when_viewer_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

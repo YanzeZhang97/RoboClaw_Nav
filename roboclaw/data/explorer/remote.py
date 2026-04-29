@@ -45,7 +45,7 @@ _HF_VIEWER_BASE = os.getenv(
 ).rstrip("/")
 _HF_TOKEN = os.getenv("HF_TOKEN", "")
 _VIEWER_TIMEOUT = 30
-_VIEWER_PAGE_SIZE = 500
+_VIEWER_PAGE_SIZE = 100
 _VIEWER_RETRY_DELAYS = (0.3, 0.8)
 _EPISODE_META_INT_FIELDS = {
     "episode_index": ("episode_index", "0"),
