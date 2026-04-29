@@ -140,6 +140,9 @@ const translations = {
     startingTraining: '启动训练中...',
     stoppingTraining: '停止中...',
     trainJobStatus: '训练状态',
+    trainingProgress: '训练进度',
+    noActiveTraining: '当前没有训练任务',
+    noTrainingProgress: '训练开始后，这里会持续显示任务进度。',
     refreshPolicies: '刷新模型',
     noPolicies: '暂无训练模型',
     policies: '已训练模型',
@@ -308,6 +311,10 @@ const translations = {
     warnings: '个警告',
     epTime: '时长 (s)',
     resetTime: '重置 (s)',
+    manageMode: '管理模式',
+    manageModel: '管理模型',
+    enterManagePassword: '请输入管理密码',
+    managePasswordError: '密码错误',
 
     // Setup Wizard
     setup: '硬件设置',
@@ -616,6 +623,9 @@ const translations = {
     startingTraining: 'Starting training...',
     stoppingTraining: 'Stopping...',
     trainJobStatus: 'Training Status',
+    trainingProgress: 'Training Progress',
+    noActiveTraining: 'No active training job',
+    noTrainingProgress: 'Training progress will appear here after a job starts.',
     refreshPolicies: 'Refresh Models',
     noPolicies: 'No trained models',
     policies: 'Trained Models',
@@ -784,6 +794,10 @@ const translations = {
     warnings: 'warnings',
     epTime: 'Time (s)',
     resetTime: 'Reset (s)',
+    manageMode: 'Manage Mode',
+    manageModel: 'Manage Model',
+    enterManagePassword: 'Enter admin password',
+    managePasswordError: 'Incorrect password',
 
     // Setup Wizard
     setup: 'Setup',
