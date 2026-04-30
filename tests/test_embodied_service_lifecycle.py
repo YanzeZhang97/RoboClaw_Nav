@@ -198,10 +198,11 @@ async def test_run_replay_waits_for_process_completion_without_tty(tmp_path: Pat
     _write_runtime_dataset(tmp_path / "datasets", "demo")
     service.replay = ControlledSession(service.board, "Replay finished.")
     run_replay = getattr(service, "run_replay")
+    replay_argv = _replay_argv(tmp_path, episode=2, fps=15)
 
     with patch("roboclaw.embodied.service.check_arm_status", side_effect=_single_follower_status()), patch(
         "roboclaw.embodied.service.CommandBuilder.replay",
-        return_value=["replay-cmd"],
+        return_value=replay_argv,
     ):
         task = asyncio.create_task(run_replay(dataset_name="demo", episode=2, fps=15))
         await asyncio.wait_for(service.replay.started.wait(), timeout=1)
@@ -214,7 +215,7 @@ async def test_run_replay_waits_for_process_completion_without_tty(tmp_path: Pat
         result = await asyncio.wait_for(task, timeout=1)
 
     assert result == "Replay finished."
-    assert service.replay.argv == ["replay-cmd"]
+    assert service.replay.argv == replay_argv
     assert not service.busy
     assert not service.embodiment_busy
     assert service._active_session is None
@@ -315,10 +316,11 @@ async def test_start_replay_releases_lock_on_session_start_failure(tmp_path: Pat
     _bind_replay_setup(service)
     _write_runtime_dataset(tmp_path / "datasets", "demo")
     service.replay = FailingSession()
+    replay_argv = _replay_argv(tmp_path)
 
     with patch("roboclaw.embodied.service.check_arm_status", side_effect=_single_follower_status()), patch(
         "roboclaw.embodied.service.CommandBuilder.replay",
-        return_value=["replay-cmd"],
+        return_value=replay_argv,
     ):
         with pytest.raises(RuntimeError, match="boom"):
             await service.start_replay(dataset_name="demo")
