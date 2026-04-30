@@ -205,14 +205,14 @@ def register_remote_dataset_session(
 
 def create_uploaded_directory_session(
     *,
-    files: list[tuple[str, bytes]],
+    files: list[tuple[str, bytes | Path]],
     display_name: str | None = None,
 ) -> dict[str, Any]:
     session_id = uuid4().hex[:12]
     handle = make_session_handle("local_directory", session_id)
     dataset_dir = _dataset_dir("local_directory", session_id)
     dataset_root = dataset_dir.resolve()
-    write_plan: list[tuple[Path, bytes]] = []
+    write_plan: list[tuple[Path, bytes | Path]] = []
 
     for relative_path, raw in files:
         target = (dataset_root / relative_path).resolve()
@@ -225,7 +225,10 @@ def create_uploaded_directory_session(
         _ensure_dir(dataset_dir)
         for target, raw in write_plan:
             _ensure_dir(target.parent)
-            target.write_bytes(raw)
+            if isinstance(raw, Path):
+                shutil.copyfile(raw, target)
+            else:
+                target.write_bytes(raw)
 
         session_display_name = display_name or dataset_dir.name
         metadata = {

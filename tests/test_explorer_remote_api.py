@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -144,6 +146,51 @@ def test_explorer_episode_passes_preview_flag(monkeypatch: pytest.MonkeyPatch) -
     assert calls["preview_only"] is True
 
 
+def test_explorer_episode_accepts_preview_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    calls: dict[str, bool] = {}
+
+    def _fake_detail(dataset: str, episode_index: int, *, preview_only: bool = False) -> dict:
+        calls["preview_only"] = preview_only
+        return {
+            "episode_index": episode_index,
+            "summary": {
+                "row_count": 12,
+                "fps": 30,
+                "duration_s": 0.4,
+                "video_count": 0,
+            },
+            "sample_rows": [],
+            "joint_trajectory": {
+                "x_axis_key": "timestamp",
+                "x_values": [],
+                "time_values": [],
+                "frame_values": [],
+                "joint_trajectories": [],
+                "sampled_points": 0,
+                "total_points": 0,
+            },
+            "videos": [],
+        }
+
+    monkeypatch.setattr(explorer_routes, "load_remote_episode_detail", _fake_detail)
+
+    response = client.get(
+        "/api/explorer/episode",
+        params={
+            "dataset": "cadene/droid_1.0.1",
+            "episode_index": 0,
+            "preview": "true",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls["preview_only"] is True
+
+
 def test_explorer_dataset_suggestions_use_remote_search(monkeypatch: pytest.MonkeyPatch) -> None:
     app = FastAPI()
     explorer_routes.register_explorer_routes(app)
@@ -159,6 +206,80 @@ def test_explorer_dataset_suggestions_use_remote_search(monkeypatch: pytest.Monk
 
     assert response.status_code == 200
     assert response.json() == [{"id": "droid-3"}]
+
+
+def test_explorer_datasets_can_list_local_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    monkeypatch.setattr(
+        explorer_routes,
+        "list_local_dataset_options",
+        lambda: [
+            {
+                "id": "workspace/keep",
+                "label": "Keep",
+                "path": "/tmp/keep",
+                "source": "local",
+            },
+            {
+                "id": "workspace/drop",
+                "label": "Drop",
+                "path": "/tmp/drop",
+                "source": "local",
+            },
+        ],
+    )
+
+    response = client.get(
+        "/api/explorer/datasets",
+        params={"source": "local", "query": "keep"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "id": "workspace/keep",
+            "label": "Keep",
+            "path": "/tmp/keep",
+            "source": "local",
+        }
+    ]
+
+
+def test_explorer_local_directory_session_rejects_path_escape() -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/explorer/local-directory-session",
+        data={"relative_paths": "../escape.txt"},
+        files={"files": ("escape.txt", b"x")},
+    )
+
+    assert response.status_code == 400
+
+
+def test_explorer_local_video_rejects_sibling_prefix_escape(tmp_path: Path) -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    root = tmp_path / "dataset"
+    sibling = tmp_path / "dataset_evil"
+    (root / "meta").mkdir(parents=True)
+    (root / "meta" / "info.json").write_text("{}", encoding="utf-8")
+    sibling.mkdir()
+    (sibling / "clip.mp4").write_bytes(b"not-video")
+
+    response = client.get(
+        "/api/explorer/local-video/%2E%2E/dataset_evil/clip.mp4",
+        params={"source": "path", "dataset_path": str(root)},
+    )
+
+    assert response.status_code == 403
 
 
 def test_explorer_dataset_info_uses_remote_summary(monkeypatch: pytest.MonkeyPatch) -> None:
