@@ -478,11 +478,13 @@ def register_collection_routes(
     ) -> Any:
         coordinator._require_auth(authorization)
         params = {"target_date": target_date} if target_date else None
-        return await cloud.request(
-            "GET",
-            "/collection/my/assignments",
-            authorization=authorization,
-            params=params,
+        return await _cloud_or_http_exception(
+            cloud.request(
+                "GET",
+                "/collection/my/assignments",
+                authorization=authorization,
+                params=params,
+            )
         )
 
     @app.post("/api/collection/runs/start")

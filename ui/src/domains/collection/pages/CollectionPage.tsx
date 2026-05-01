@@ -151,7 +151,7 @@ export default function CollectionPage() {
       <div className="collection-toolbar">
         <div>
           <div className="eyebrow">Collection</div>
-          <h2 className="collection-title">今日采集任务</h2>
+          <h2 className="collection-title">采集中心</h2>
         </div>
         <div className="collection-toolbar__actions">
           <input
@@ -161,7 +161,7 @@ export default function CollectionPage() {
             onChange={(event) => setTargetDate(event.target.value)}
           />
           {user?.level === 'admin' && (
-            <Link className="collection-link-button" to="/collection/admin">管理员</Link>
+            <Link className="collection-link-button collection-link-button--primary" to="/collection/admin">任务发布</Link>
           )}
         </div>
       </div>

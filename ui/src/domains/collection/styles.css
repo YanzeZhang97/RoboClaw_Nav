@@ -81,6 +81,37 @@
     color: var(--ac);
 }
 
+.collection-link-button--primary {
+    border-color: rgba(47, 111, 228, 0.28);
+    background: #2f6fe4;
+    color: #fff;
+}
+
+.collection-tabs {
+    display: inline-flex;
+    min-height: 40px;
+    overflow: hidden;
+    border: 1px solid rgba(47, 111, 228, 0.16);
+    border-radius: 8px;
+    background: rgba(47, 111, 228, 0.06);
+}
+
+.collection-tab {
+    min-width: 88px;
+    border: 0;
+    background: transparent;
+    padding: 0 12px;
+    color: var(--tx2);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.collection-tab--active {
+    background: #fff;
+    color: var(--ac);
+    box-shadow: 0 4px 12px rgba(31, 61, 112, 0.08);
+}
+
 .collection-summary {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(160px, 320px) auto;

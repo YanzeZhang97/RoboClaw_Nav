@@ -38,22 +38,27 @@ const emptyTask: TaskPayload = {
 
 export default function CollectionAdminPage() {
   const { user, isLoggedIn, isChecking } = useAuthStore()
+  const [view, setView] = useState<'publish' | 'progress'>('publish')
   const [tasks, setTasks] = useState<CollectionTask[]>([])
   const [progress, setProgress] = useState<Assignment[]>([])
   const [taskForm, setTaskForm] = useState<TaskPayload>(emptyTask)
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [phone, setPhone] = useState('')
   const [targetDate, setTargetDate] = useState(todayIso())
+  const [allDates, setAllDates] = useState(false)
   const [targetHours, setTargetHours] = useState('3')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const activeTasks = useMemo(() => tasks.filter((task) => task.is_active), [tasks])
+  const progressDate = allDates ? undefined : targetDate
+  const totalTargetSeconds = progress.reduce((sum, item) => sum + item.target_seconds, 0)
+  const totalCompletedSeconds = progress.reduce((sum, item) => sum + item.completed_seconds, 0)
 
   async function refresh() {
     const [nextTasks, nextProgress] = await Promise.all([
       collectionApi.listTasks(),
-      collectionApi.getProgress(targetDate),
+      collectionApi.getProgress(progressDate),
     ])
     setTasks(nextTasks)
     setProgress(nextProgress)
@@ -70,7 +75,7 @@ export default function CollectionAdminPage() {
         setError('')
         const [nextTasks, nextProgress] = await Promise.all([
           collectionApi.listTasks(),
-          collectionApi.getProgress(targetDate),
+          collectionApi.getProgress(progressDate),
         ])
         if (cancelled) return
         setTasks(nextTasks)
@@ -86,7 +91,7 @@ export default function CollectionAdminPage() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn, selectedTaskId, targetDate, user?.level])
+  }, [allDates, isLoggedIn, progressDate, selectedTaskId, targetDate, user?.level])
 
   async function createTask(event: FormEvent) {
     event.preventDefault()
@@ -138,90 +143,118 @@ export default function CollectionAdminPage() {
       <div className="collection-toolbar">
         <div>
           <div className="eyebrow">Admin</div>
-          <h2 className="collection-title">任务发布</h2>
+          <h2 className="collection-title">采集中心</h2>
         </div>
-        <input
-          className="collection-input collection-input--date"
-          type="date"
-          value={targetDate}
-          onChange={(event) => setTargetDate(event.target.value)}
-        />
+        <div className="collection-toolbar__actions">
+          <div className="collection-tabs" role="tablist" aria-label="采集管理视图">
+            <button
+              type="button"
+              className={view === 'publish' ? 'collection-tab collection-tab--active' : 'collection-tab'}
+              onClick={() => setView('publish')}
+            >
+              任务发布
+            </button>
+            <button
+              type="button"
+              className={view === 'progress' ? 'collection-tab collection-tab--active' : 'collection-tab'}
+              onClick={() => setView('progress')}
+            >
+              全部进度
+            </button>
+          </div>
+          <button
+            type="button"
+            className={allDates ? 'collection-link-button collection-link-button--primary' : 'collection-link-button'}
+            onClick={() => setAllDates((value) => !value)}
+          >
+            全部日期
+          </button>
+          <input
+            className="collection-input collection-input--date"
+            type="date"
+            value={targetDate}
+            disabled={allDates}
+            onChange={(event) => setTargetDate(event.target.value)}
+          />
+        </div>
       </div>
 
       {error && <div className="collection-error">{error}</div>}
 
-      <div className="collection-admin-layout">
-        <form className="collection-panel" onSubmit={createTask}>
-          <h3>创建任务</h3>
-          <label>
-            <span>任务名</span>
-            <input className="collection-input" value={taskForm.name} onChange={(event) => setTaskForm({ ...taskForm, name: event.target.value })} required />
-          </label>
-          <label>
-            <span>采集任务描述</span>
-            <textarea className="collection-input collection-textarea" value={taskForm.task_prompt} onChange={(event) => setTaskForm({ ...taskForm, task_prompt: event.target.value })} required />
-          </label>
-          <div className="collection-form-grid">
+      {view === 'publish' && (
+        <div className="collection-admin-layout">
+          <form className="collection-panel" onSubmit={createTask}>
+            <h3>创建任务</h3>
             <label>
-              <span>Episodes</span>
-              <input className="collection-input" type="number" min={1} value={taskForm.num_episodes} onChange={(event) => setTaskForm({ ...taskForm, num_episodes: Number(event.target.value) })} />
+              <span>任务名称</span>
+              <input className="collection-input" value={taskForm.name} onChange={(event) => setTaskForm({ ...taskForm, name: event.target.value })} required />
             </label>
             <label>
-              <span>FPS</span>
-              <input className="collection-input" type="number" min={1} value={taskForm.fps} onChange={(event) => setTaskForm({ ...taskForm, fps: Number(event.target.value) })} />
+              <span>控制中心指令</span>
+              <textarea className="collection-input collection-textarea" value={taskForm.task_prompt} onChange={(event) => setTaskForm({ ...taskForm, task_prompt: event.target.value })} required />
             </label>
-            <label>
-              <span>Episode 秒</span>
-              <input className="collection-input" type="number" min={1} value={taskForm.episode_time_s} onChange={(event) => setTaskForm({ ...taskForm, episode_time_s: Number(event.target.value) })} />
+            <div className="collection-form-grid">
+              <label>
+                <span>Episodes</span>
+                <input className="collection-input" type="number" min={1} value={taskForm.num_episodes} onChange={(event) => setTaskForm({ ...taskForm, num_episodes: Number(event.target.value) })} />
+              </label>
+              <label>
+                <span>FPS</span>
+                <input className="collection-input" type="number" min={1} value={taskForm.fps} onChange={(event) => setTaskForm({ ...taskForm, fps: Number(event.target.value) })} />
+              </label>
+              <label>
+                <span>Episode 秒</span>
+                <input className="collection-input" type="number" min={1} value={taskForm.episode_time_s} onChange={(event) => setTaskForm({ ...taskForm, episode_time_s: Number(event.target.value) })} />
+              </label>
+              <label>
+                <span>Reset 秒</span>
+                <input className="collection-input" type="number" min={0} value={taskForm.reset_time_s} onChange={(event) => setTaskForm({ ...taskForm, reset_time_s: Number(event.target.value) })} />
+              </label>
+            </div>
+            <div className="collection-form-grid">
+              <label>
+                <span>Dataset prefix</span>
+                <input className="collection-input" value={taskForm.dataset_prefix} onChange={(event) => setTaskForm({ ...taskForm, dataset_prefix: event.target.value })} required />
+              </label>
+              <label>
+                <span>Arms</span>
+                <input className="collection-input" value={taskForm.arms} onChange={(event) => setTaskForm({ ...taskForm, arms: event.target.value })} />
+              </label>
+            </div>
+            <label className="collection-checkbox">
+              <input type="checkbox" checked={taskForm.use_cameras} onChange={(event) => setTaskForm({ ...taskForm, use_cameras: event.target.checked })} />
+              <span>使用相机</span>
             </label>
-            <label>
-              <span>Reset 秒</span>
-              <input className="collection-input" type="number" min={0} value={taskForm.reset_time_s} onChange={(event) => setTaskForm({ ...taskForm, reset_time_s: Number(event.target.value) })} />
-            </label>
-          </div>
-          <div className="collection-form-grid">
-            <label>
-              <span>Dataset prefix</span>
-              <input className="collection-input" value={taskForm.dataset_prefix} onChange={(event) => setTaskForm({ ...taskForm, dataset_prefix: event.target.value })} required />
-            </label>
-            <label>
-              <span>Arms</span>
-              <input className="collection-input" value={taskForm.arms} onChange={(event) => setTaskForm({ ...taskForm, arms: event.target.value })} />
-            </label>
-          </div>
-          <label className="collection-checkbox">
-            <input type="checkbox" checked={taskForm.use_cameras} onChange={(event) => setTaskForm({ ...taskForm, use_cameras: event.target.checked })} />
-            <span>使用相机</span>
-          </label>
-          <ActionButton type="submit" disabled={loading}>创建</ActionButton>
-        </form>
+            <ActionButton type="submit" disabled={loading}>创建</ActionButton>
+          </form>
 
-        <form className="collection-panel" onSubmit={assignTask}>
-          <h3>分配任务</h3>
-          <label>
-            <span>任务</span>
-            <select className="collection-input" value={selectedTaskId} onChange={(event) => setSelectedTaskId(event.target.value)} required>
-              {activeTasks.map((task) => (
-                <option key={task.id} value={task.id}>{task.name}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>手机号</span>
-            <input className="collection-input" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="13800000000" required />
-          </label>
-          <label>
-            <span>目标小时</span>
-            <input className="collection-input" type="number" min={0.1} step={0.1} value={targetHours} onChange={(event) => setTargetHours(event.target.value)} />
-          </label>
-          <ActionButton type="submit" disabled={loading || !selectedTaskId}>发布/更新</ActionButton>
-        </form>
-      </div>
+          <form className="collection-panel" onSubmit={assignTask}>
+            <h3>分配任务</h3>
+            <label>
+              <span>任务</span>
+              <select className="collection-input" value={selectedTaskId} onChange={(event) => setSelectedTaskId(event.target.value)} required>
+                {activeTasks.map((task) => (
+                  <option key={task.id} value={task.id}>{task.name}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>手机号</span>
+              <input className="collection-input" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="13800000000" required />
+            </label>
+            <label>
+              <span>目标小时</span>
+              <input className="collection-input" type="number" min={0.1} step={0.1} value={targetHours} onChange={(event) => setTargetHours(event.target.value)} />
+            </label>
+            <ActionButton type="submit" disabled={loading || !selectedTaskId}>发布/更新</ActionButton>
+          </form>
+        </div>
+      )}
 
       <section className="collection-panel collection-panel--wide">
         <div className="collection-panel__head">
-          <h3>{targetDate} 进度</h3>
-          <span>{progress.length} assignments</span>
+          <h3>{allDates ? '全部进度' : `${targetDate} 进度`}</h3>
+          <span>{progress.length} 个分配 · {secondsToHours(totalCompletedSeconds)} / {secondsToHours(totalTargetSeconds)} h</span>
         </div>
         <div className="collection-progress-list">
           {progress.map((item) => {
@@ -230,7 +263,7 @@ export default function CollectionAdminPage() {
               <div className="collection-progress-row" key={item.id}>
                 <div>
                   <strong>{item.task_name}</strong>
-                  <span>{item.phone}{item.user_nickname ? ` · ${item.user_nickname}` : ''}</span>
+                  <span>{item.target_date} · {item.phone}{item.user_nickname ? ` · ${item.user_nickname}` : ''}</span>
                 </div>
                 <div className="collection-progress-row__bar"><span style={{ width: `${pct}%` }} /></div>
                 <div className="collection-progress-row__value">

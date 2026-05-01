@@ -64,6 +64,7 @@ class FakeCloud:
         self.requests: list[dict[str, Any]] = []
         self.proxy_requests: list[dict[str, Any]] = []
         self.fail_finish = False
+        self.fail_assignments = False
         self.assignments = [{"id": "assign-1", "task_name": "Task A"}]
 
     async def request(
@@ -83,6 +84,8 @@ class FakeCloud:
             "params": params,
         })
         if path == "/collection/my/assignments":
+            if self.fail_assignments:
+                raise CloudApiError(401, "用户不存在")
             return self.assignments
         if path == "/collection/runs/start":
             return {
@@ -154,6 +157,15 @@ def test_assignments_forwards_bearer_token(client: TestClient, app: FastAPI) -> 
     assert request["path"] == "/collection/my/assignments"
     assert request["authorization"] == "Bearer abc"
     assert request["params"] == {"target_date": "2026-05-01"}
+
+
+def test_assignments_returns_cloud_error_without_500(client: TestClient, app: FastAPI) -> None:
+    app.state.fake_cloud.fail_assignments = True
+
+    resp = client.get("/api/collection/assignments", headers={"Authorization": "Bearer abc"})
+
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "用户不存在"
 
 
 def test_evo_auth_proxy_uses_auth_cloud_not_collection_cloud(tmp_path: Path) -> None:
