@@ -2,6 +2,8 @@ import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppShell from '@/app/shell/AppShell'
 import ControlPage from '@/domains/control/pages/ControlPage'
+import CollectionPage from '@/domains/collection/pages/CollectionPage'
+import CollectionAdminPage from '@/domains/collection/pages/CollectionAdminPage'
 import RecoveryCenterPage from '@/domains/recovery/pages/RecoveryCenterPage'
 import DatasetExplorerPage from '@/domains/datasets/explorer/pages/DatasetExplorerPage'
 import TrainingCenterPage from '@/domains/training/pages/TrainingCenterPage'
@@ -32,7 +34,9 @@ function App() {
 
                 {/* 主应用：AppShell 内的所有路由，无需登录即可访问本地功能 */}
                 <Route path="/" element={<AppShell />}>
-                    <Route index element={<Navigate to="/control" replace />} />
+                    <Route index element={<Navigate to="/collection" replace />} />
+                    <Route path="collection" element={<CollectionPage />} />
+                    <Route path="collection/admin" element={<CollectionAdminPage />} />
                     <Route path="control" element={<ControlPage />} />
                     <Route path="recovery" element={<RecoveryCenterPage />} />
                     <Route path="datasets" element={<Navigate to="/curation/datasets" replace />} />

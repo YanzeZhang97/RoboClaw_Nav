@@ -10,6 +10,16 @@ import AppHeader from '@/app/shell/AppHeader'
 import ToastContainer from '@/app/shell/ToastOutlet'
 
 const NAV_ICONS: Record<string, JSX.Element> = {
+  '/collection': (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6h13" />
+      <path d="M8 12h13" />
+      <path d="M8 18h13" />
+      <path d="M3 6h.01" />
+      <path d="M3 12h.01" />
+      <path d="M3 18h.01" />
+    </svg>
+  ),
   '/control': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="7" height="7" rx="1.5" />
@@ -99,6 +109,7 @@ export default function AppShell() {
   }, [location.pathname])
 
   const navItemsBeforePipeline: NavItem[] = [
+    { path: '/collection', label: '采集任务' },
     { path: '/control', label: t('controlCenter') },
     { path: '/recovery', label: t('recoveryNav'), badge: recoveryFaults.length || undefined },
   ]
