@@ -22,6 +22,19 @@ function progressPct(item: Assignment) {
   return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
 }
 
+function parsePhones(value: string) {
+  return Array.from(new Set(
+    value
+      .split(/[\s,，;；]+/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+  ))
+}
+
+function invalidPhones(phones: string[]) {
+  return phones.filter((phone) => !/^1\d{10}$/.test(phone))
+}
+
 const emptyTask: TaskPayload = {
   description: '',
   task_prompt: '',
@@ -34,7 +47,7 @@ export default function CollectionAdminPage() {
   const [progress, setProgress] = useState<Assignment[]>([])
   const [taskForm, setTaskForm] = useState<TaskPayload>(emptyTask)
   const [selectedTaskId, setSelectedTaskId] = useState('')
-  const [phone, setPhone] = useState('')
+  const [phoneText, setPhoneText] = useState('')
   const [targetDate, setTargetDate] = useState(todayIso())
   const [allDates, setAllDates] = useState(false)
   const [targetHours, setTargetHours] = useState('3')
@@ -105,14 +118,24 @@ export default function CollectionAdminPage() {
     setLoading(true)
     setError('')
     try {
-      await collectionApi.upsertAssignment({
-        phone,
-        task_id: selectedTaskId,
-        target_date: targetDate,
-        target_seconds: Math.round(Number(targetHours) * 3600),
-        is_active: true,
-      })
-      setPhone('')
+      const phones = parsePhones(phoneText)
+      const invalid = invalidPhones(phones)
+      if (phones.length === 0) {
+        throw new Error('请输入手机号')
+      }
+      if (invalid.length > 0) {
+        throw new Error(`手机号格式不正确：${invalid.join(', ')}`)
+      }
+      for (const phone of phones) {
+        await collectionApi.upsertAssignment({
+          phone,
+          task_id: selectedTaskId,
+          target_date: targetDate,
+          target_seconds: Math.round(Number(targetHours) * 3600),
+          is_active: true,
+        })
+      }
+      setPhoneText('')
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -195,13 +218,19 @@ export default function CollectionAdminPage() {
             </label>
             <label>
               <span>手机号</span>
-              <input className="collection-input" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="13800000000" required />
+              <textarea
+                className="collection-input collection-textarea"
+                value={phoneText}
+                onChange={(event) => setPhoneText(event.target.value)}
+                placeholder={'13800000000\n13900000000'}
+                required
+              />
             </label>
             <label>
               <span>目标小时</span>
               <input className="collection-input" type="number" min={0.1} step={0.1} value={targetHours} onChange={(event) => setTargetHours(event.target.value)} />
             </label>
-            <ActionButton type="submit" disabled={loading || !selectedTaskId}>发布/更新</ActionButton>
+            <ActionButton type="submit" disabled={loading || !selectedTaskId || !phoneText.trim()}>发布/更新</ActionButton>
           </form>
         </div>
       )}
