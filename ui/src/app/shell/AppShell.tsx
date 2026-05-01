@@ -101,6 +101,11 @@ export default function AppShell() {
   const user = useAuthStore((state) => state.user)
   const [chatOpen, setChatOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [collectionExpanded, setCollectionExpanded] = useState(
+    location.pathname.startsWith('/collection')
+    || location.pathname.startsWith('/control')
+    || location.pathname.startsWith('/recovery'),
+  )
   const [pipelineExpanded, setPipelineExpanded] = useState(location.pathname.startsWith('/curation'))
 
   useEffect(() => {
@@ -113,22 +118,33 @@ export default function AppShell() {
   }, [fetchHardwareStatus])
 
   useEffect(() => {
+    if (
+      location.pathname.startsWith('/collection')
+      || location.pathname.startsWith('/control')
+      || location.pathname.startsWith('/recovery')
+    ) {
+      setCollectionExpanded(true)
+    }
     if (location.pathname.startsWith('/curation')) {
       setPipelineExpanded(true)
     }
   }, [location.pathname])
 
-  const navItemsBeforePipeline: NavItem[] = [
-    { path: '/collection', label: '采集中心' },
-    ...(user?.level === 'admin' ? [{ path: '/collection/admin', label: '任务发布' }] : []),
-    { path: '/control', label: t('controlCenter') },
-    { path: '/recovery', label: t('recoveryNav'), badge: recoveryFaults.length || undefined },
-  ]
+  const navItemsBeforePipeline: NavItem[] = []
   const navItemsAfterPipeline: NavItem[] = [
     { path: '/training', label: t('trainingCenter') },
     { path: '/settings', label: t('settings') },
     { path: '/logs', label: t('logs') },
   ]
+  const collectionChildren = [
+    ...(user?.level === 'admin' ? [{ path: '/collection/admin', label: '任务发布' }] : []),
+    { path: '/control', label: '控制平台' },
+    { path: '/recovery', label: '修复平台', badge: recoveryFaults.length || undefined },
+  ]
+  const collectionActive =
+    location.pathname.startsWith('/collection')
+    || location.pathname.startsWith('/control')
+    || location.pathname.startsWith('/recovery')
   const pipelineChildren = [
     { path: '/curation/datasets', label: t('datasetReader') },
     { path: '/curation/quality', label: t('qualityWorkbench') },
@@ -186,6 +202,84 @@ export default function AppShell() {
         </div>
 
         <nav className="app-sidebar__nav">
+          {sidebarCollapsed ? (
+            <Link
+              to="/control"
+              className={cn('app-sidebar__link', collectionActive && 'app-sidebar__link--active')}
+              title="采集中心"
+            >
+              <span className="app-sidebar__link-icon">
+                {NAV_ICONS['/collection']}
+              </span>
+            </Link>
+          ) : (
+            <div className="app-sidebar__group">
+              <button
+                type="button"
+                className={cn(
+                  'app-sidebar__link',
+                  'app-sidebar__group-trigger',
+                  collectionActive && 'app-sidebar__link--active',
+                )}
+                onClick={() => setCollectionExpanded((value) => !value)}
+                aria-expanded={collectionExpanded}
+              >
+                <span className="app-sidebar__link-icon">
+                  {NAV_ICONS['/collection']}
+                </span>
+                <span className="app-sidebar__link-label">采集中心</span>
+                <span
+                  className={cn(
+                    'app-sidebar__caret',
+                    collectionExpanded && 'app-sidebar__caret--expanded',
+                  )}
+                  aria-hidden="true"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </span>
+              </button>
+
+              {collectionExpanded && (
+                <div className="app-sidebar__children">
+                  {collectionChildren.map((child) => {
+                    const active =
+                      location.pathname === child.path
+                      || location.pathname.startsWith(`${child.path}/`)
+                    return (
+                      <Link
+                        key={child.path}
+                        to={child.path}
+                        className={cn(
+                          'app-sidebar__child-link',
+                          active && 'app-sidebar__child-link--active',
+                        )}
+                      >
+                        <span className="app-sidebar__child-dot" aria-hidden="true" />
+                        <span className="app-sidebar__child-label">{child.label}</span>
+                        {child.badge && (
+                          <span className="ml-auto rounded-full bg-rd/10 px-1.5 py-0.5 text-[11px] font-bold text-rd">
+                            {child.badge}
+                          </span>
+                        )}
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {navItemsBeforePipeline.map(renderNavItem)}
 
           {sidebarCollapsed ? (

@@ -204,7 +204,7 @@ export default function CollectionPage() {
             <ActionButton variant="success" onClick={() => episodeAction(doSaveEpisode)} disabled={loading}>保存 episode</ActionButton>
             <ActionButton variant="warning" onClick={() => episodeAction(doSkipReset)} disabled={loading}>跳过 reset</ActionButton>
             <ActionButton variant="danger" onClick={() => episodeAction(doDiscardEpisode)} disabled={loading}>丢弃 episode</ActionButton>
-            <ActionButton variant="danger" onClick={stop} disabled={loading}>结束录制</ActionButton>
+            <ActionButton variant="danger" onClick={stop} disabled={loading}>结束采集</ActionButton>
           </div>
         </section>
       )}

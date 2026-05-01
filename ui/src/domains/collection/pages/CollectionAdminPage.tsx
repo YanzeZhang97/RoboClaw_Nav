@@ -135,7 +135,7 @@ export default function CollectionAdminPage() {
   }
 
   if (!isLoggedIn || user?.level !== 'admin') {
-    return <Navigate to="/collection" replace />
+    return <Navigate to="/control" replace />
   }
 
   return (
@@ -143,7 +143,7 @@ export default function CollectionAdminPage() {
       <div className="collection-toolbar">
         <div>
           <div className="eyebrow">Admin</div>
-          <h2 className="collection-title">采集中心</h2>
+          <h2 className="collection-title">任务发布</h2>
         </div>
         <div className="collection-toolbar__actions">
           <div className="collection-tabs" role="tablist" aria-label="采集管理视图">
@@ -190,7 +190,7 @@ export default function CollectionAdminPage() {
               <input className="collection-input" value={taskForm.name} onChange={(event) => setTaskForm({ ...taskForm, name: event.target.value })} required />
             </label>
             <label>
-              <span>控制中心指令</span>
+              <span>采集动作要求</span>
               <textarea className="collection-input collection-textarea" value={taskForm.task_prompt} onChange={(event) => setTaskForm({ ...taskForm, task_prompt: event.target.value })} required />
             </label>
             <div className="collection-form-grid">

@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collectionApi, type CollectionStatus } from '@/domains/collection/api/collectionApi'
-import { CameraPreviewPanel } from '@/domains/control/components/CameraPreviewPanel'
-import { ServoPanel } from '@/domains/hardware/components/ServoPanel'
+import { collectionApi, type Assignment, type CollectionStatus } from '@/domains/collection/api/collectionApi'
 import { useHardwareStore, type OperationCapability } from '@/domains/hardware/store/useHardwareStore'
 import { useSessionStore, type SessionState } from '@/domains/session/store/useSessionStore'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { ActionButton } from '@/shared/ui'
 
 const blockedCapability: OperationCapability = { ready: false, missing: [] }
 
@@ -50,11 +49,25 @@ function canStart(state: SessionState) {
   return state === 'idle' || state === 'error'
 }
 
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function formatHours(seconds: number) {
+  const hours = seconds / 3600
+  return `${hours.toFixed(hours >= 10 ? 0 : 1)} h`
+}
+
 function formatSeconds(seconds: number) {
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   const rest = seconds % 60
   return rest ? `${minutes}m ${rest}s` : `${minutes}m`
+}
+
+function assignmentProgressPct(item: Assignment) {
+  if (item.target_seconds <= 0) return 0
+  return Math.min(100, Math.round((item.completed_seconds / item.target_seconds) * 100))
 }
 
 function HardwareSummary({ hwStatus, busy, state, owner }: {
@@ -107,37 +120,114 @@ function HardwareSummary({ hwStatus, busy, state, owner }: {
 
 function CollectionRunPanel({
   collectionStatus,
+  assignments,
+  targetDate,
   session,
   loading,
+  onDateChange,
+  onStart,
   onStop,
   onSave,
   onDiscard,
   onSkipReset,
+  onRetryPending,
 }: {
   collectionStatus: CollectionStatus | null
+  assignments: Assignment[]
+  targetDate: string
   session: any
   loading: boolean
+  onDateChange: (value: string) => void
+  onStart: (assignment: Assignment) => void
   onStop: () => void
   onSave: () => void
   onDiscard: () => void
   onSkipReset: () => void
+  onRetryPending: () => void
 }) {
   const active = collectionStatus?.active_run
+  const totalTargetSeconds = assignments.reduce((sum, item) => sum + item.target_seconds, 0)
+  const totalCompletedSeconds = assignments.reduce((sum, item) => sum + item.completed_seconds, 0)
+  const totalProgress = totalTargetSeconds > 0 ? Math.min(100, Math.round((totalCompletedSeconds / totalTargetSeconds) * 100)) : 0
   const targetEpisodes = session.target_episodes || active?.task_params.num_episodes || 0
   const pct = targetEpisodes > 0 ? Math.min(100, Math.round((session.saved_episodes / targetEpisodes) * 100)) : 0
 
   if (!active) {
     return (
-      <section className="bg-sf rounded-lg p-5 shadow-card">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Collection</div>
-            <h2 className="mt-2 text-xl font-bold text-tx">没有进行中的采集</h2>
-            <p className="mt-1 text-sm text-tx2">请从采集任务页选择任务后开始采集。</p>
+      <>
+        <section className="bg-sf rounded-lg p-5 shadow-card">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Collection</div>
+              <h2 className="mt-2 text-xl font-bold text-tx">数采</h2>
+            </div>
+            <input
+              className="collection-input collection-input--date"
+              type="date"
+              value={targetDate}
+              onChange={(event) => onDateChange(event.target.value)}
+            />
           </div>
-          <Link className="collection-link-button" to="/collection">返回采集任务</Link>
+
+          <div className="mt-4 grid items-center gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(180px,320px)_auto]">
+            <div>
+              <div className="text-xs font-bold text-tx2">总进度</div>
+              <div className="mt-1 text-2xl font-black text-tx">
+                {formatHours(totalCompletedSeconds)} / {formatHours(totalTargetSeconds)}
+              </div>
+            </div>
+            <div className="collection-progress">
+              <span style={{ width: `${totalProgress}%` }} />
+            </div>
+            <div className="rounded-full border border-bd/50 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.16em] text-tx2">
+              Idle
+            </div>
+          </div>
+        </section>
+
+        {collectionStatus && collectionStatus.pending_finish_count > 0 && (
+          <div className="collection-warning">
+            <span>{collectionStatus.pending_finish_count} 个 finish 等待同步</span>
+            <ActionButton variant="warning" onClick={onRetryPending} disabled={loading}>重试同步</ActionButton>
+          </div>
+        )}
+
+        <div className="collection-grid">
+          {assignments.map((assignment) => {
+            const assignmentPct = assignmentProgressPct(assignment)
+            const disabled = loading || !assignment.is_active
+            return (
+              <article className="collection-task-card" key={assignment.id}>
+                <div className="collection-task-card__head">
+                  <div>
+                    <h3>{assignment.task_name}</h3>
+                    <p>{assignment.task_params.task}</p>
+                  </div>
+                  <span>{assignmentPct}%</span>
+                </div>
+                <div className="collection-progress">
+                  <span style={{ width: `${assignmentPct}%` }} />
+                </div>
+                <div className="collection-task-card__meta">
+                  <span>{formatHours(assignment.completed_seconds)} / {formatHours(assignment.target_seconds)}</span>
+                  <span>{assignment.task_params.fps} fps</span>
+                  <span>{assignment.task_params.num_episodes} eps</span>
+                </div>
+                <ActionButton disabled={disabled} onClick={() => onStart(assignment)}>
+                  开始采集
+                </ActionButton>
+              </article>
+            )
+          })}
         </div>
-      </section>
+
+        {assignments.length === 0 && (
+          <div className="collection-empty">
+            <div className="collection-empty__title">没有任务</div>
+            <div className="collection-empty__caption">{targetDate}</div>
+          </div>
+        )}
+      </>
     )
   }
 
@@ -198,6 +288,8 @@ function AdminDebugPanel({
   onTeleopStop,
   onRecordStart,
   onRecordStop,
+  onInferStart,
+  onInferStop,
 }: {
   state: SessionState
   loading: string | null
@@ -212,28 +304,39 @@ function AdminDebugPanel({
     resetTime: number
   }) => void
   onRecordStop: () => void
+  onInferStart: (params: {
+    checkpointPath: string
+    numEpisodes: number
+    episodeTime: number
+  }) => void
+  onInferStop: () => void
 }) {
   const [task, setTask] = useState('')
   const [fps, setFps] = useState(30)
   const [numEpisodes, setNumEpisodes] = useState(1)
   const [episodeTime, setEpisodeTime] = useState(300)
   const [resetTime, setResetTime] = useState(10)
+  const [checkpointPath, setCheckpointPath] = useState('')
+  const [inferEpisodes, setInferEpisodes] = useState(1)
+  const [inferEpisodeTime, setInferEpisodeTime] = useState(300)
   const teleopCapability = capabilityOf(hwStatus, 'teleop')
   const recordCapability = capabilityOf(hwStatus, 'record')
+  const inferCapability = capabilityOf(hwStatus, 'infer')
   const busy = state !== 'idle' && state !== 'error'
 
   return (
     <section className="bg-sf rounded-lg p-5 shadow-card">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Admin Debug</div>
-          <h2 className="mt-2 text-xl font-bold text-tx">调试控制</h2>
+          <div className="text-2xs font-mono uppercase tracking-widest text-tx3">Control</div>
+          <h2 className="mt-2 text-xl font-bold text-tx">控制平台</h2>
         </div>
         <Link className="collection-link-button" to="/collection/admin">任务发布</Link>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <div className="grid gap-2">
+      <div className="grid gap-4 xl:grid-cols-3">
+        <div className="grid gap-2 content-start">
+          <h3 className="text-sm font-bold text-tx">摇操</h3>
           <ActionBtn color="ac" disabled={!canStart(state) || !teleopCapability.ready || !!loading} onClick={onTeleopStart} title={capabilityReason(teleopCapability)}>
             开始遥操作
           </ActionBtn>
@@ -243,11 +346,12 @@ function AdminDebugPanel({
         </div>
 
         <div className="grid gap-3">
+          <h3 className="text-sm font-bold text-tx">数采</h3>
           <input
             className="collection-input"
             value={task}
             onChange={(event) => setTask(event.target.value)}
-            placeholder="调试录制任务描述"
+            placeholder="调试采集任务描述"
           />
           <div className="collection-form-grid">
             <input className="collection-input" type="number" min={1} value={numEpisodes} onChange={(event) => setNumEpisodes(Number(event.target.value) || 1)} />
@@ -262,10 +366,53 @@ function AdminDebugPanel({
               onClick={() => onRecordStart({ task, numEpisodes, fps, episodeTime, resetTime })}
               title={capabilityReason(recordCapability)}
             >
-              开始调试录制
+              开始调试采集
             </ActionBtn>
             <ActionBtn color="rd" disabled={state !== 'recording' || !!loading} onClick={onRecordStop}>
-              停止调试录制
+              停止调试采集
+            </ActionBtn>
+          </div>
+        </div>
+
+        <div className="grid gap-3 content-start">
+          <h3 className="text-sm font-bold text-tx">推理</h3>
+          <input
+            className="collection-input"
+            value={checkpointPath}
+            onChange={(event) => setCheckpointPath(event.target.value)}
+            placeholder="Checkpoint path"
+          />
+          <div className="collection-form-grid">
+            <input
+              className="collection-input"
+              type="number"
+              min={1}
+              value={inferEpisodes}
+              onChange={(event) => setInferEpisodes(Number(event.target.value) || 1)}
+            />
+            <input
+              className="collection-input"
+              type="number"
+              min={1}
+              value={inferEpisodeTime}
+              onChange={(event) => setInferEpisodeTime(Number(event.target.value) || 300)}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <ActionBtn
+              color="ac"
+              disabled={busy || !inferCapability.ready || !!loading || !checkpointPath.trim()}
+              onClick={() => onInferStart({
+                checkpointPath,
+                numEpisodes: inferEpisodes,
+                episodeTime: inferEpisodeTime,
+              })}
+              title={capabilityReason(inferCapability)}
+            >
+              开始推理
+            </ActionBtn>
+            <ActionBtn color="rd" disabled={state !== 'inferring' || !!loading} onClick={onInferStop}>
+              停止推理
             </ActionBtn>
           </div>
         </div>
@@ -284,23 +431,28 @@ export default function ControlPage() {
   const doTeleopStop = useSessionStore((store) => store.doTeleopStop)
   const doRecordStart = useSessionStore((store) => store.doRecordStart)
   const doRecordStop = useSessionStore((store) => store.doRecordStop)
+  const doInferStart = useSessionStore((store) => store.doInferStart)
+  const doInferStop = useSessionStore((store) => store.doInferStop)
   const doSaveEpisode = useSessionStore((store) => store.doSaveEpisode)
   const doDiscardEpisode = useSessionStore((store) => store.doDiscardEpisode)
   const doSkipReset = useSessionStore((store) => store.doSkipReset)
   const hwStatus = useHardwareStore((store) => store.hardwareStatus)
   const fetchHardwareStatus = useHardwareStore((store) => store.fetchHardwareStatus)
   const [collectionStatus, setCollectionStatus] = useState<CollectionStatus | null>(null)
+  const [assignments, setAssignments] = useState<Assignment[]>([])
+  const [targetDate, setTargetDate] = useState(todayIso())
   const [collectionError, setCollectionError] = useState('')
   const [collectionLoading, setCollectionLoading] = useState(false)
 
   const busy = session.state !== 'idle' && session.state !== 'error'
-  const camerasExist = hwStatus && hwStatus.cameras.length > 0 && hwStatus.cameras.some((camera: any) => camera.connected)
 
   async function refreshCollectionStatus() {
-    const [nextStatus] = await Promise.all([
+    const [nextAssignments, nextStatus] = await Promise.all([
+      collectionApi.getAssignments(targetDate),
       collectionApi.getStatus(),
       fetchSessionStatus(),
     ])
+    setAssignments(nextAssignments)
     setCollectionStatus(nextStatus)
   }
 
@@ -314,7 +466,7 @@ export default function ControlPage() {
       }
     }, 5000)
     return () => clearInterval(timer)
-  }, [fetchHardwareStatus, fetchSessionStatus])
+  }, [fetchHardwareStatus, fetchSessionStatus, targetDate])
 
   async function runCollectionAction(action: () => Promise<void>) {
     setCollectionLoading(true)
@@ -355,6 +507,18 @@ export default function ControlPage() {
     })
   }
 
+  async function startCollectionRun(assignment: Assignment) {
+    await runCollectionAction(async () => {
+      await collectionApi.startRun(assignment.id)
+    })
+  }
+
+  async function retryPendingFinish() {
+    await runCollectionAction(async () => {
+      await collectionApi.retryPending()
+    })
+  }
+
   return (
     <div className="page-enter flex h-full flex-col overflow-y-auto">
       {collectionError && (
@@ -373,12 +537,17 @@ export default function ControlPage() {
 
         <CollectionRunPanel
           collectionStatus={collectionStatus}
+          assignments={assignments}
+          targetDate={targetDate}
           session={session}
           loading={collectionLoading || Boolean(loading)}
+          onDateChange={setTargetDate}
+          onStart={(assignment) => { void startCollectionRun(assignment) }}
           onStop={() => { void stopCollectionRun() }}
           onSave={() => { void runCollectionAction(doSaveEpisode) }}
           onDiscard={() => { void runCollectionAction(doDiscardEpisode) }}
           onSkipReset={() => { void runCollectionAction(doSkipReset) }}
+          onRetryPending={() => { void retryPendingFinish() }}
         />
 
         {isAdmin && (
@@ -390,19 +559,16 @@ export default function ControlPage() {
             onTeleopStop={() => { void doTeleopStop() }}
             onRecordStart={handleAdminRecordStart}
             onRecordStop={() => { void doRecordStop() }}
+            onInferStart={(params) => {
+              void doInferStart({
+                checkpoint_path: params.checkpointPath,
+                num_episodes: params.numEpisodes,
+                episode_time_s: params.episodeTime,
+              })
+            }}
+            onInferStop={() => { void doInferStop() }}
           />
         )}
-
-        <div className="grid min-h-[240px] grid-cols-2 gap-3 max-[900px]:grid-cols-1">
-          {camerasExist ? (
-            <CameraPreviewPanel cameras={hwStatus!.cameras} busy={busy} />
-          ) : (
-            <div className="flex items-center justify-center rounded-lg bg-sf p-4 text-sm text-tx3 shadow-card">
-              没有可用相机画面
-            </div>
-          )}
-          <ServoPanel state={session.state} />
-        </div>
       </div>
     </div>
   )

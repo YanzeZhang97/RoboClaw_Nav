@@ -52,7 +52,7 @@ function App() {
                 {/* 主应用：必须登录后才能访问 */}
                 <Route element={<RequireLogin />}>
                     <Route path="/" element={<AppShell />}>
-                        <Route index element={<Navigate to="/collection" replace />} />
+                        <Route index element={<Navigate to="/control" replace />} />
                         <Route path="collection" element={<CollectionPage />} />
                         <Route path="collection/admin" element={<CollectionAdminPage />} />
                         <Route path="control" element={<ControlPage />} />
