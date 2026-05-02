@@ -471,6 +471,96 @@ def test_explorer_prepare_remote_uses_workspace_prep(
     }
 
 
+def test_explorer_local_directory_upload_spools_to_temp_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    captured: list[tuple[str, bool, bytes]] = []
+
+    def create_session(
+        *,
+        files: list[tuple[str, bytes | Path]],
+        display_name: str | None = None,
+    ) -> dict[str, object]:
+        captured.extend((relative_path, isinstance(raw, Path), Path(raw).read_bytes()) for relative_path, raw in files)
+        return {
+            "dataset_name": "session:local_directory:demo",
+            "display_name": display_name,
+            "summary": {},
+        }
+
+    monkeypatch.setattr(explorer_routes, "create_uploaded_directory_session", create_session)
+
+    response = client.post(
+        "/api/explorer/local-directory-session",
+        files=[
+            ("files", ("info.json", b'{"fps": 30}', "application/json")),
+            ("relative_paths", (None, "meta/info.json")),
+            ("display_name", (None, "demo")),
+        ],
+    )
+
+    assert response.status_code == 200
+    assert captured == [("meta/info.json", True, b'{"fps": 30}')]
+
+
+def test_explorer_local_directory_upload_rejects_too_many_files(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    monkeypatch.setattr(explorer_routes, "MAX_LOCAL_DIRECTORY_UPLOAD_FILES", 1)
+    monkeypatch.setattr(
+        explorer_routes,
+        "create_uploaded_directory_session",
+        lambda **_kwargs: pytest.fail("upload should be rejected before session creation"),
+    )
+
+    response = client.post(
+        "/api/explorer/local-directory-session",
+        files=[
+            ("files", ("one.txt", b"1", "text/plain")),
+            ("files", ("two.txt", b"2", "text/plain")),
+            ("relative_paths", (None, "one.txt")),
+            ("relative_paths", (None, "two.txt")),
+        ],
+    )
+
+    assert response.status_code == 413
+    assert "more than 1 files" in response.json()["detail"]
+
+
+def test_explorer_local_directory_upload_rejects_total_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    explorer_routes.register_explorer_routes(app)
+    client = TestClient(app)
+
+    monkeypatch.setattr(explorer_routes, "MAX_LOCAL_DIRECTORY_UPLOAD_BYTES", 3)
+    monkeypatch.setattr(
+        explorer_routes,
+        "create_uploaded_directory_session",
+        lambda **_kwargs: pytest.fail("upload should be rejected before session creation"),
+    )
+
+    response = client.post(
+        "/api/explorer/local-directory-session",
+        files=[
+            ("files", ("data.bin", b"1234", "application/octet-stream")),
+            ("relative_paths", (None, "data.bin")),
+        ],
+    )
+
+    assert response.status_code == 413
+    assert "exceeds 3 bytes" in response.json()["detail"]
+
+
 def test_remote_episode_meta_falls_back_to_parquet_index(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

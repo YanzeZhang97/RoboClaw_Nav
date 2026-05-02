@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any, TypeVar
@@ -57,6 +58,9 @@ class ExplorerPrepareRequest(BaseModel):
 
 
 T = TypeVar("T")
+MAX_LOCAL_DIRECTORY_UPLOAD_FILES = 4096
+MAX_LOCAL_DIRECTORY_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
+UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
 
 
 def _resolve_child_path(root: Path, relative_path: str) -> Path:
@@ -77,6 +81,42 @@ def _validate_uploaded_relative_path(relative_path: str) -> str:
     ):
         raise HTTPException(status_code=400, detail=f"Invalid uploaded file path '{relative_path}'")
     return path.as_posix()
+
+
+async def _spool_upload_file(upload: UploadFile, target: Path, total_bytes: int) -> int:
+    with target.open("wb") as output:
+        while chunk := await upload.read(UPLOAD_READ_CHUNK_BYTES):
+            total_bytes += len(chunk)
+            if total_bytes > MAX_LOCAL_DIRECTORY_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Uploaded directory exceeds {MAX_LOCAL_DIRECTORY_UPLOAD_BYTES} bytes",
+                )
+            output.write(chunk)
+    return total_bytes
+
+
+async def _spool_uploaded_directory_files(
+    files: list[UploadFile],
+    relative_paths: list[str],
+    spool_root: Path,
+) -> list[tuple[str, Path]]:
+    if len(files) != len(relative_paths):
+        raise HTTPException(status_code=400, detail="files and relative_paths length mismatch")
+    if len(files) > MAX_LOCAL_DIRECTORY_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded directory includes more than {MAX_LOCAL_DIRECTORY_UPLOAD_FILES} files",
+        )
+
+    file_payloads: list[tuple[str, Path]] = []
+    total_bytes = 0
+    for index, (upload, relative_path) in enumerate(zip(files, relative_paths)):
+        safe_relative_path = _validate_uploaded_relative_path(relative_path)
+        spool_path = spool_root / f"{index:08d}.upload"
+        total_bytes = await _spool_upload_file(upload, spool_path, total_bytes)
+        file_payloads.append((safe_relative_path, spool_path))
+    return file_payloads
 
 
 def _remote_dataset_not_accessible_detail(dataset_name: str) -> str:
@@ -513,19 +553,16 @@ def register_explorer_routes(app: FastAPI) -> None:
         relative_paths: list[str] = Form(...),
         display_name: str | None = Form(None),
     ) -> dict[str, Any]:
-        if len(files) != len(relative_paths):
-            raise HTTPException(status_code=400, detail="files and relative_paths length mismatch")
-        file_payloads: list[tuple[str, bytes]] = []
-        for upload, relative_path in zip(files, relative_paths):
-            file_payloads.append((_validate_uploaded_relative_path(relative_path), await upload.read()))
-        try:
-            payload = await asyncio.to_thread(
-                create_uploaded_directory_session,
-                files=file_payloads,
-                display_name=display_name,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        with tempfile.TemporaryDirectory() as spool_dir:
+            file_payloads = await _spool_uploaded_directory_files(files, relative_paths, Path(spool_dir))
+            try:
+                payload = await asyncio.to_thread(
+                    create_uploaded_directory_session,
+                    files=file_payloads,
+                    display_name=display_name,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         logger.info("Explorer created local directory session '{}'", payload["dataset_name"])
         return payload
 

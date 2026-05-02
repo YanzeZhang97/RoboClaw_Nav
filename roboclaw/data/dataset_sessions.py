@@ -166,47 +166,55 @@ def register_remote_dataset_session(
     handle = make_session_handle("remote", session_id)
     session_dir = _session_dir("remote", session_id)
     dataset_dir = _dataset_dir("remote", session_id)
+    remove_on_failure = force or not session_dir.exists()
     if force and session_dir.exists():
         shutil.rmtree(session_dir)
-    _ensure_dir(dataset_dir)
 
-    snapshot_download(
-        repo_id=dataset_id,
-        repo_type="dataset",
-        local_dir=str(dataset_dir),
-        allow_patterns=["meta/**", "README*", *(["videos/**"] if include_videos else [])],
-    )
+    succeeded = False
+    try:
+        _ensure_dir(dataset_dir)
 
-    info_path = dataset_dir / "meta" / "info.json"
-    if info_path.is_file():
-        info = json.loads(info_path.read_text(encoding="utf-8"))
-        if info.get("source_dataset") != dataset_id:
-            info["source_dataset"] = dataset_id
-            info_path.write_text(json.dumps(info, indent=2), encoding="utf-8")
+        snapshot_download(
+            repo_id=dataset_id,
+            repo_type="dataset",
+            local_dir=str(dataset_dir),
+            allow_patterns=["meta/**", "README*", *(["videos/**"] if include_videos else [])],
+        )
 
-    metadata = {
-        "handle": handle,
-        "kind": "remote",
-        "session_id": session_id,
-        "display_name": dataset_id,
-        "source_dataset": dataset_id,
-        "dataset_dir": str(dataset_dir.resolve()),
-    }
-    _write_session_metadata("remote", session_id, metadata)
-    summary = _build_dataset_summary_from_dir(
-        dataset_dir=dataset_dir,
-        handle=handle,
-        display_name=dataset_id,
-        source_kind="remote_session",
-        source_dataset=dataset_id,
-    )
-    return {
-        "dataset_id": dataset_id,
-        "dataset_name": handle,
-        "display_name": dataset_id,
-        "local_path": str(dataset_dir.resolve()),
-        "summary": summary,
-    }
+        info_path = dataset_dir / "meta" / "info.json"
+        if info_path.is_file():
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+            if info.get("source_dataset") != dataset_id:
+                info["source_dataset"] = dataset_id
+                info_path.write_text(json.dumps(info, indent=2), encoding="utf-8")
+
+        metadata = {
+            "handle": handle,
+            "kind": "remote",
+            "session_id": session_id,
+            "display_name": dataset_id,
+            "source_dataset": dataset_id,
+            "dataset_dir": str(dataset_dir.resolve()),
+        }
+        _write_session_metadata("remote", session_id, metadata)
+        summary = _build_dataset_summary_from_dir(
+            dataset_dir=dataset_dir,
+            handle=handle,
+            display_name=dataset_id,
+            source_kind="remote_session",
+            source_dataset=dataset_id,
+        )
+        succeeded = True
+        return {
+            "dataset_id": dataset_id,
+            "dataset_name": handle,
+            "display_name": dataset_id,
+            "local_path": str(dataset_dir.resolve()),
+            "summary": summary,
+        }
+    finally:
+        if not succeeded and remove_on_failure and session_dir.exists():
+            shutil.rmtree(session_dir)
 
 
 def create_uploaded_directory_session(
