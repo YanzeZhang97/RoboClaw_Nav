@@ -105,6 +105,8 @@ export const inlineEn = {
 
         // Training
         training: 'Training',
+        localTraining: 'Local Training',
+        remoteTraining: 'Remote Training',
         startTraining: 'Start Training',
         stopTraining: 'Stop Training',
         steps: 'Steps',
