@@ -176,6 +176,50 @@ class TestDataWorkshop:
         assert gate["status"] == "passed"
         assert gate["details"]["repaired_path"] == str(repaired_dir)
 
+    def test_successful_repair_refreshes_stale_structure_state(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        client = _client(tmp_path, monkeypatch)
+        dataset_dir = tmp_path / "datasets" / "local" / "repairable_mismatch"
+        _write_dataset(dataset_dir, total_frames=2, parquet_rows=3, episode_lengths=[3])
+
+        diagnose = client.post("/api/data-workshop/datasets/local/repairable_mismatch/diagnose")
+        assert diagnose.status_code == 200
+        assert any(
+            issue["check"] == "frame_count_mismatch"
+            for issue in diagnose.json()["structure"]["issues"]
+        )
+
+        diagnosis = SimpleNamespace(
+            dataset_dir=dataset_dir,
+            damage_type=SimpleNamespace(value="meta_stale"),
+            repairable=True,
+            details={"n_parquet_rows": 3},
+        )
+
+        def repair_in_place(*_args: object, **_kwargs: object) -> SimpleNamespace:
+            info_path = dataset_dir / "meta" / "info.json"
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+            info["total_frames"] = 3
+            info_path.write_text(json.dumps(info), encoding="utf-8")
+            return SimpleNamespace(outcome="repaired", error=None)
+
+        monkeypatch.setattr("roboclaw.data.workshop.service.diagnose_dataset", lambda _path: diagnosis)
+        monkeypatch.setattr("roboclaw.data.workshop.service.repair_dataset", repair_in_place)
+
+        repaired = client.post("/api/data-workshop/datasets/local/repairable_mismatch/repair", json={})
+
+        assert repaired.status_code == 200
+        assert repaired.json()["structure"]["passed"] is True
+
+        manual_gate = client.post(
+            "/api/data-workshop/datasets/local/repairable_mismatch/gates/manual_boundary_review",
+            json={"status": "passed", "message": "ok"},
+        )
+        assert manual_gate.status_code == 200
+
     def test_critical_structure_failure_cannot_be_manually_overridden(
         self,
         tmp_path: Path,

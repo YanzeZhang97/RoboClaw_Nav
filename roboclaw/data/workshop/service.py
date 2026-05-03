@@ -104,11 +104,17 @@ class DataWorkshopService:
             "repaired_path": str(repaired_path) if repaired_path.exists() else "",
         }
         self._set_gate(gates, "repair", gate_status, repair_result.outcome, details)
+        structure = (
+            inspect_structure(dataset_path)
+            if gate_status == "passed"
+            else state.get("structure") or inspect_structure(dataset_path)
+        )
         saved = self._save_dataset_state(
             dataset_path,
             {
                 **state,
                 "diagnosis": diagnosis,
+                "structure": structure,
                 "gates": self._serialize_gates(gates),
             },
         )
