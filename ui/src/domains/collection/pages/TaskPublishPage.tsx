@@ -53,6 +53,14 @@ interface AssignmentEditState {
   is_active: boolean
 }
 
+type TaskDialogState =
+  | { mode: 'closed' }
+  | { mode: 'create'; draft: TaskPayload }
+  | { mode: 'details'; taskId: string }
+  | { mode: 'edit'; taskId: string; draft: TaskPayload }
+  | { mode: 'publish'; taskId: string }
+  | { mode: 'delete'; taskId: string }
+
 function assignmentToEditState(item: Assignment): AssignmentEditState {
   return {
     id: item.id,
@@ -95,11 +103,7 @@ export default function TaskPublishPage() {
   const [view, setView] = useState<'publish' | 'progress'>('publish')
   const [tasks, setTasks] = useState<CollectionTask[]>([])
   const [progress, setProgress] = useState<Assignment[]>([])
-  const [taskForm, setTaskForm] = useState<TaskPayload>(emptyTask)
-  const [taskEditor, setTaskEditor] = useState<TaskPayload>(emptyTask)
-  const [taskDialogMode, setTaskDialogMode] = useState<'create' | 'details' | 'edit' | 'publish' | null>(null)
-  const [dialogTaskId, setDialogTaskId] = useState('')
-  const [deleteCandidate, setDeleteCandidate] = useState<CollectionTask | null>(null)
+  const [taskDialog, setTaskDialog] = useState<TaskDialogState>({ mode: 'closed' })
   const [selectedTaskId, setSelectedTaskId] = useState('')
   const [publishCounts, setPublishCounts] = useState<Record<string, number>>({})
   const [draggingTaskId, setDraggingTaskId] = useState('')
@@ -114,10 +118,12 @@ export default function TaskPublishPage() {
   const [error, setError] = useState('')
 
   const activeTasks = useMemo(() => tasks.filter((task) => task.is_active), [tasks])
+  const dialogTaskId = taskDialog.mode === 'closed' || taskDialog.mode === 'create' ? '' : taskDialog.taskId
   const dialogTask = useMemo(
     () => tasks.find((task) => task.id === dialogTaskId) || null,
     [dialogTaskId, tasks],
   )
+  const taskDialogOpen = taskDialog.mode !== 'closed' && taskDialog.mode !== 'delete'
   const progressDate = allDates ? undefined : targetDate
   const totalTargetSeconds = progress.reduce((sum, item) => sum + item.target_seconds, 0)
   const totalCompletedSeconds = progress.reduce((sum, item) => sum + item.completed_seconds, 0)
@@ -141,6 +147,11 @@ export default function TaskPublishPage() {
     setTasks(next.tasks)
     setProgress(next.progress)
     setPublishCounts(next.publishCounts)
+    setTaskDialog((currentDialog) => {
+      if (currentDialog.mode === 'closed' || currentDialog.mode === 'create') return currentDialog
+      const taskExists = next.tasks.some((task) => task.id === currentDialog.taskId)
+      return taskExists ? currentDialog : { mode: 'closed' }
+    })
     setSelectedTaskId((currentTaskId) => {
       const currentTask = next.tasks.find((task) => task.id === currentTaskId && task.is_active)
       if (currentTask) return currentTaskId
@@ -178,9 +189,9 @@ export default function TaskPublishPage() {
     setLoading(true)
     setError('')
     try {
-      const created = await collectionApi.createTask(taskForm)
-      setTaskForm({ ...emptyTask })
-      setTaskDialogMode(null)
+      if (taskDialog.mode !== 'create') return
+      const created = await collectionApi.createTask(taskDialog.draft)
+      setTaskDialog({ mode: 'closed' })
       await refresh()
       setSelectedTaskId(created.id)
     } catch (err) {
@@ -203,14 +214,13 @@ export default function TaskPublishPage() {
       if (invalid.length > 0) {
         throw new Error(`手机号格式不正确：${invalid.join(', ')}`)
       }
-      const taskId = taskDialogMode === 'publish' && dialogTask ? dialogTask.id : selectedTaskId
-      if (!taskId) {
+      if (taskDialog.mode !== 'publish') {
         throw new Error('请选择任务')
       }
       await Promise.all(
         phones.map((phone) => collectionApi.upsertAssignment({
           phone,
-          task_id: taskId,
+          task_id: taskDialog.taskId,
           target_date: targetDate,
           target_seconds: Math.round(Number(targetHours) * 3600),
           is_active: true,
@@ -218,9 +228,7 @@ export default function TaskPublishPage() {
       )
       setPhoneRows([''])
       await refresh()
-      if (taskDialogMode === 'publish') {
-        setTaskDialogMode(null)
-      }
+      setTaskDialog({ mode: 'closed' })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -254,13 +262,14 @@ export default function TaskPublishPage() {
 
   async function updateTask(event: FormEvent) {
     event.preventDefault()
-    if (!dialogTask) return
+    if (taskDialog.mode !== 'edit') return
     setLoading(true)
     setError('')
     try {
-      await collectionApi.updateTask(dialogTask.id, taskEditor)
+      const taskId = taskDialog.taskId
+      await collectionApi.updateTask(taskId, taskDialog.draft)
       await refresh()
-      setTaskDialogMode('details')
+      setTaskDialog({ mode: 'details', taskId })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -269,19 +278,16 @@ export default function TaskPublishPage() {
   }
 
   async function deleteTask() {
-    if (!deleteCandidate) return
+    if (taskDialog.mode !== 'delete') return
     setLoading(true)
     setError('')
     try {
-      await collectionApi.deleteTask(deleteCandidate.id)
-      if (selectedTaskId === deleteCandidate.id) {
+      const taskId = taskDialog.taskId
+      await collectionApi.deleteTask(taskId)
+      if (selectedTaskId === taskId) {
         setSelectedTaskId('')
       }
-      if (dialogTaskId === deleteCandidate.id) {
-        setTaskDialogMode(null)
-        setDialogTaskId('')
-      }
-      setDeleteCandidate(null)
+      setTaskDialog({ mode: 'closed' })
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -313,28 +319,23 @@ export default function TaskPublishPage() {
   }
 
   function openCreateDialog() {
-    setTaskForm({ ...emptyTask })
-    setDialogTaskId('')
-    setTaskDialogMode('create')
+    setTaskDialog({ mode: 'create', draft: { ...emptyTask } })
   }
 
   function openTaskDialog(task: CollectionTask) {
     if (!task.is_active) return
-    setDialogTaskId(task.id)
-    setTaskEditor(taskToPayload(task))
-    setTaskDialogMode('details')
+    setTaskDialog({ mode: 'details', taskId: task.id })
   }
 
   function editDialogTask() {
     if (!dialogTask) return
-    setTaskEditor(taskToPayload(dialogTask))
-    setTaskDialogMode('edit')
+    setTaskDialog({ mode: 'edit', taskId: dialogTask.id, draft: taskToPayload(dialogTask) })
   }
 
   function publishDialogTask() {
     if (!dialogTask) return
     setSelectedTaskId(dialogTask.id)
-    setTaskDialogMode('publish')
+    setTaskDialog({ mode: 'publish', taskId: dialogTask.id })
   }
 
   function taskPublishCount(taskId: string) {
@@ -342,8 +343,7 @@ export default function TaskPublishPage() {
   }
 
   function closeTaskDialog() {
-    setTaskDialogMode(null)
-    setDialogTaskId('')
+    setTaskDialog({ mode: 'closed' })
   }
 
   function updatePhoneRow(index: number, value: string) {
@@ -401,7 +401,7 @@ export default function TaskPublishPage() {
     const task = trashReady ? tasks.find((item) => item.id === taskId) : null
     resetTrashDragState()
     if (task) {
-      setDeleteCandidate(task)
+      setTaskDialog({ mode: 'delete', taskId: task.id })
     }
   }
 
@@ -693,7 +693,7 @@ export default function TaskPublishPage() {
         </section>
       )}
 
-      {taskDialogMode && (
+      {taskDialogOpen && (
         <div
           className="collection-modal-backdrop"
           role="presentation"
@@ -705,16 +705,16 @@ export default function TaskPublishPage() {
             <div className="collection-modal__head">
               <div>
                 <h3 id="collection-task-dialog-title">
-                  {taskDialogMode === 'create' ? '创建新任务' : taskDialogMode === 'edit' ? '编辑任务' : taskDialogMode === 'publish' ? '发布任务' : '任务详情'}
+                  {taskDialog.mode === 'create' ? '创建新任务' : taskDialog.mode === 'edit' ? '编辑任务' : taskDialog.mode === 'publish' ? '发布任务' : '任务详情'}
                 </h3>
-                <span>{taskDialogMode === 'create' ? '创建后自动进入任务池' : '任务池里的任务可以编辑参数，也可以直接发布'}</span>
+                <span>{taskDialog.mode === 'create' ? '创建后自动进入任务池' : '任务池里的任务可以编辑参数，也可以直接发布'}</span>
               </div>
               <button type="button" className="collection-link-button" onClick={closeTaskDialog}>关闭</button>
             </div>
 
-            {taskDialogMode === 'create' && (
+            {taskDialog.mode === 'create' && (
               <form className="collection-modal-form" onSubmit={createTask}>
-                {renderTaskFields(taskForm, setTaskForm)}
+                {renderTaskFields(taskDialog.draft, (draft) => setTaskDialog({ ...taskDialog, draft }))}
                 <div className="collection-modal__actions">
                   <button type="button" className="collection-link-button" onClick={closeTaskDialog}>取消</button>
                   <ActionButton type="submit" disabled={loading}>创建</ActionButton>
@@ -722,7 +722,7 @@ export default function TaskPublishPage() {
               </form>
             )}
 
-            {taskDialogMode === 'details' && dialogTask && (
+            {taskDialog.mode === 'details' && dialogTask && (
               <div className="collection-task-dialog">
                 <div className="collection-task-dialog-card">
                   <strong>{dialogTask.task_prompt}</strong>
@@ -737,17 +737,17 @@ export default function TaskPublishPage() {
               </div>
             )}
 
-            {taskDialogMode === 'edit' && dialogTask && (
+            {taskDialog.mode === 'edit' && dialogTask && (
               <form className="collection-modal-form" onSubmit={updateTask}>
-                {renderTaskFields(taskEditor, setTaskEditor)}
+                {renderTaskFields(taskDialog.draft, (draft) => setTaskDialog({ ...taskDialog, draft }))}
                 <div className="collection-modal__actions">
-                  <button type="button" className="collection-link-button" onClick={() => setTaskDialogMode('details')}>取消</button>
+                  <button type="button" className="collection-link-button" onClick={() => setTaskDialog({ mode: 'details', taskId: taskDialog.taskId })}>取消</button>
                   <ActionButton type="submit" disabled={loading}>确定</ActionButton>
                 </div>
               </form>
             )}
 
-            {taskDialogMode === 'publish' && dialogTask && (
+            {taskDialog.mode === 'publish' && dialogTask && (
               <form className="collection-modal-form" onSubmit={assignTask}>
                 <div className="collection-drop-target">
                   <strong>{dialogTask.task_prompt}</strong>
@@ -766,7 +766,7 @@ export default function TaskPublishPage() {
                   </label>
                 </div>
                 <div className="collection-modal__actions">
-                  <button type="button" className="collection-link-button" onClick={() => setTaskDialogMode('details')}>返回</button>
+                  <button type="button" className="collection-link-button" onClick={() => setTaskDialog({ mode: 'details', taskId: taskDialog.taskId })}>返回</button>
                   <ActionButton type="submit" disabled={loading || normalizePhoneRows(phoneRows).length === 0}>发布</ActionButton>
                 </div>
               </form>
@@ -775,12 +775,12 @@ export default function TaskPublishPage() {
         </div>
       )}
 
-      {deleteCandidate && (
+      {taskDialog.mode === 'delete' && dialogTask && (
         <div
           className="collection-modal-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setDeleteCandidate(null)
+            if (event.target === event.currentTarget) closeTaskDialog()
           }}
         >
           <section className="collection-modal collection-modal--narrow" role="dialog" aria-modal="true" aria-labelledby="collection-delete-dialog-title">
@@ -789,14 +789,14 @@ export default function TaskPublishPage() {
                 <h3 id="collection-delete-dialog-title">删除任务</h3>
                 <span>确认后这个任务会从任务池删除</span>
               </div>
-              <button type="button" className="collection-link-button" onClick={() => setDeleteCandidate(null)}>关闭</button>
+              <button type="button" className="collection-link-button" onClick={closeTaskDialog}>关闭</button>
             </div>
             <div className="collection-task-dialog-card">
-              <strong>{deleteCandidate.task_prompt}</strong>
-              <span>{deleteCandidate.num_episodes} eps · {deleteCandidate.fps} fps · {deleteCandidate.episode_time_s}s</span>
+              <strong>{dialogTask.task_prompt}</strong>
+              <span>{dialogTask.num_episodes} eps · {dialogTask.fps} fps · {dialogTask.episode_time_s}s</span>
             </div>
             <div className="collection-modal__actions">
-              <button type="button" className="collection-link-button" onClick={() => setDeleteCandidate(null)}>取消</button>
+              <button type="button" className="collection-link-button" onClick={closeTaskDialog}>取消</button>
               <ActionButton type="button" variant="danger" disabled={loading} onClick={deleteTask}>确认删除</ActionButton>
             </div>
           </section>
