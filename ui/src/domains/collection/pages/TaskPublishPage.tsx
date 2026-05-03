@@ -438,6 +438,14 @@ export default function TaskPublishPage() {
             <span>Dataset prefix</span>
             <input className="collection-input" value={value.dataset_prefix} onChange={(event) => update({ ...value, dataset_prefix: event.target.value })} required />
           </label>
+          <label className="collection-checkbox">
+            <input
+              type="checkbox"
+              checked={value.use_cameras ?? true}
+              onChange={(event) => update({ ...value, use_cameras: event.target.checked })}
+            />
+            <span>使用相机</span>
+          </label>
         </div>
       </>
     )
