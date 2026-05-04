@@ -39,6 +39,7 @@ export interface UserInfo {
 
 export type MembershipRole = 'owner' | 'admin' | 'member'
 export type InviteRole = 'admin' | 'member'
+export type MembershipStatus = 'active' | 'invited' | 'disabled'
 
 export interface OrganizationInfo {
     id: string
@@ -50,7 +51,7 @@ export interface MembershipInfo {
     id: string
     org_id: string
     role_code: MembershipRole
-    status: 'active' | 'invited' | 'disabled'
+    status: MembershipStatus
     organization: OrganizationInfo
 }
 
@@ -60,7 +61,7 @@ export interface OrganizationMember {
     phone: string
     nickname: string | null
     role_code: MembershipRole
-    status: 'active' | 'disabled'
+    status: MembershipStatus
     joined_at: string | null
 }
 
@@ -76,12 +77,17 @@ export function currentMembershipRole(user: UserInfo | null): MembershipRole | n
 }
 
 export function canManageCollection(user: UserInfo | null): boolean {
-    const role = currentMembershipRole(user)
-    return role === 'owner' || role === 'admin'
+    const membership = user?.current_membership
+    return membership?.status === 'active'
+        && membership.organization.status === 'active'
+        && (membership.role_code === 'owner' || membership.role_code === 'admin')
 }
 
 export function canManageOrganization(user: UserInfo | null): boolean {
-    return currentMembershipRole(user) === 'owner'
+    const membership = user?.current_membership
+    return membership?.status === 'active'
+        && membership.organization.status === 'active'
+        && membership.role_code === 'owner'
 }
 
 // ─── Core request ─────────────────────────────────────────────────────────────
@@ -204,7 +210,7 @@ export const evoApi = {
 
     updateOrganizationMember: (
         membershipId: string,
-        payload: { role_code?: InviteRole; status?: 'active' | 'disabled' },
+        payload: { role_code?: InviteRole; status?: MembershipStatus },
     ): Promise<OrganizationMember> =>
         evoRequest(`/organizations/current/members/${membershipId}`, {
             method: 'PATCH',

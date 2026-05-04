@@ -14,6 +14,7 @@ import {
   evoApi,
   type CurrentOrganization,
   type InviteRole,
+  type MembershipStatus,
   type OrganizationMember,
 } from '@/shared/api/evoClient'
 import { cn } from '@/shared/lib/cn'
@@ -370,7 +371,7 @@ export default function TaskPublishPage() {
     }
   }
 
-  async function updateMember(member: OrganizationMember, payload: { role_code?: InviteRole; status?: 'active' | 'disabled' }) {
+  async function updateMember(member: OrganizationMember, payload: { role_code?: InviteRole; status?: MembershipStatus }) {
     setLoading(true)
     setError('')
     setMemberNotice('')
@@ -870,9 +871,10 @@ export default function TaskPublishPage() {
                             className="collection-input collection-input--date"
                             value={member.status}
                             disabled={loading}
-                            onChange={(event) => void updateMember(member, { status: event.target.value as 'active' | 'disabled' })}
+                            onChange={(event) => void updateMember(member, { status: event.target.value as MembershipStatus })}
                           >
                             <option value="active">active</option>
+                            <option value="invited">invited</option>
                             <option value="disabled">disabled</option>
                           </select>
                         </>
