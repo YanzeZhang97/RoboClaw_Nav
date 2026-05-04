@@ -13,12 +13,9 @@ import { useAuthStore } from '@/shared/lib/authStore'
 const NAV_ICONS: Record<string, JSX.Element> = {
   '/collection': (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M8 6h13" />
-      <path d="M8 12h13" />
-      <path d="M8 18h13" />
-      <path d="M3 6h.01" />
-      <path d="M3 12h.01" />
-      <path d="M3 18h.01" />
+      <rect x="3" y="6" width="13" height="12" rx="3" />
+      <path d="M16 10l5-3v10l-5-3" />
+      <circle cx="9.5" cy="12" r="2.2" fill="currentColor" stroke="none" />
     </svg>
   ),
   '/collection/publish': (
@@ -100,6 +97,10 @@ export default function AppShell() {
   const { t } = useI18n()
   const user = useAuthStore((state) => state.user)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [compactNav, setCompactNav] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches
+  ))
+  const [openCompactGroup, setOpenCompactGroup] = useState<'collection' | 'pipeline' | null>(null)
   const [collectionExpanded, setCollectionExpanded] = useState(
     location.pathname.startsWith('/collection'),
   )
@@ -116,15 +117,31 @@ export default function AppShell() {
   }, [fetchHardwareStatus])
 
   useEffect(() => {
-    if (
-      location.pathname.startsWith('/collection')
-    ) {
+    const query = window.matchMedia('(max-width: 900px)')
+    const updateCompactNav = () => setCompactNav(query.matches)
+    updateCompactNav()
+    query.addEventListener('change', updateCompactNav)
+    return () => query.removeEventListener('change', updateCompactNav)
+  }, [])
+
+  useEffect(() => {
+    if (compactNav) {
+      setSidebarCollapsed(false)
+    }
+  }, [compactNav])
+
+  useEffect(() => {
+    if (compactNav) {
+      setOpenCompactGroup(null)
+      return
+    }
+    if (location.pathname.startsWith('/collection')) {
       setCollectionExpanded(true)
     }
     if (location.pathname.startsWith('/curation')) {
       setPipelineExpanded(true)
     }
-  }, [location.pathname])
+  }, [compactNav, location.pathname])
 
   const navItemsBeforePipeline: NavItem[] = []
   const navItemsAfterPipeline: NavItem[] = [
@@ -146,22 +163,59 @@ export default function AppShell() {
     { path: '/curation/data-overview', label: t('dataOverview') },
   ]
   const pipelineActive = location.pathname.startsWith('/curation')
+  const showCollectionChildren = compactNav
+    ? openCompactGroup === 'collection'
+    : collectionExpanded
+  const showPipelineChildren = compactNav
+    ? openCompactGroup === 'pipeline'
+    : pipelineExpanded
+
+  function toggleNavGroup(group: 'collection' | 'pipeline') {
+    if (compactNav) {
+      setOpenCompactGroup((current) => (current === group ? null : group))
+      return
+    }
+    if (group === 'collection') {
+      setCollectionExpanded((value) => !value)
+      return
+    }
+    setPipelineExpanded((value) => !value)
+  }
+
+  function closeCompactNavGroup() {
+    if (compactNav) {
+      setOpenCompactGroup(null)
+    }
+  }
 
   const sidebarToggle = (
     <button
       type="button"
       onClick={() => setSidebarCollapsed((value) => !value)}
       className="app-sidebar__toggle"
-      aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      aria-label={compactNav
+        ? sidebarCollapsed ? 'Expand navigation' : 'Collapse navigation'
+        : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
     >
-      <svg
-        width="16" height="16" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-        style={{ transition: 'transform 0.2s ease', transform: sidebarCollapsed ? 'rotate(180deg)' : 'none' }}
-      >
-        <polyline points="11 17 6 12 11 7" />
-        <polyline points="18 17 13 12 18 7" />
-      </svg>
+      {compactNav ? (
+        <svg
+          width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transition: 'transform 0.2s ease', transform: sidebarCollapsed ? 'rotate(180deg)' : 'none' }}
+        >
+          <polyline points="7 14 12 9 17 14" />
+          <polyline points="7 20 12 15 17 20" />
+        </svg>
+      ) : (
+        <svg
+          width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          style={{ transition: 'transform 0.2s ease', transform: sidebarCollapsed ? 'rotate(180deg)' : 'none' }}
+        >
+          <polyline points="11 17 6 12 11 7" />
+          <polyline points="18 17 13 12 18 7" />
+        </svg>
+      )}
     </button>
   )
 
@@ -173,6 +227,7 @@ export default function AppShell() {
       <Link
         key={item.path}
         to={item.path}
+        onClick={closeCompactNavGroup}
         className={cn('app-sidebar__link', active && 'app-sidebar__link--active')}
         title={sidebarCollapsed ? item.label : undefined}
       >
@@ -195,9 +250,15 @@ export default function AppShell() {
 
   return (
     <div className="app-shell">
-      <aside className={cn('app-sidebar', sidebarCollapsed && 'app-sidebar--collapsed')}>
+      <aside
+        className={cn(
+          'app-sidebar',
+          sidebarCollapsed && 'app-sidebar--collapsed',
+          compactNav && openCompactGroup && 'app-sidebar--popover-open',
+        )}
+      >
         <div className="app-sidebar__header">
-          {sidebarCollapsed ? (
+          {sidebarCollapsed && !compactNav ? (
             sidebarToggle
           ) : (
             <>
@@ -205,7 +266,7 @@ export default function AppShell() {
                 <Link to="/collection/control" className="app-sidebar__brand">
                   RoboClaw
                 </Link>
-                {sidebarToggle}
+                {!compactNav && sidebarToggle}
               </div>
             </>
           )}
@@ -231,8 +292,8 @@ export default function AppShell() {
                   'app-sidebar__group-trigger',
                   collectionActive && 'app-sidebar__link--active',
                 )}
-                onClick={() => setCollectionExpanded((value) => !value)}
-                aria-expanded={collectionExpanded}
+                onClick={() => toggleNavGroup('collection')}
+                aria-expanded={showCollectionChildren}
               >
                 <span className="app-sidebar__link-icon">
                   {NAV_ICONS['/collection']}
@@ -241,7 +302,7 @@ export default function AppShell() {
                 <span
                   className={cn(
                     'app-sidebar__caret',
-                    collectionExpanded && 'app-sidebar__caret--expanded',
+                    showCollectionChildren && 'app-sidebar__caret--expanded',
                   )}
                   aria-hidden="true"
                 >
@@ -260,7 +321,7 @@ export default function AppShell() {
                 </span>
               </button>
 
-              {collectionExpanded && (
+              {showCollectionChildren && (
                 <div className="app-sidebar__children">
                   {collectionChildren.map((child) => {
                     const active =
@@ -270,6 +331,7 @@ export default function AppShell() {
                       <Link
                         key={child.path}
                         to={child.path}
+                        onClick={closeCompactNavGroup}
                         className={cn(
                           'app-sidebar__child-link',
                           active && 'app-sidebar__child-link--active',
@@ -311,8 +373,8 @@ export default function AppShell() {
                   'app-sidebar__group-trigger',
                   pipelineActive && 'app-sidebar__link--active',
                 )}
-                onClick={() => setPipelineExpanded((value) => !value)}
-                aria-expanded={pipelineExpanded}
+                onClick={() => toggleNavGroup('pipeline')}
+                aria-expanded={showPipelineChildren}
               >
                 <span className="app-sidebar__link-icon">
                   {NAV_ICONS['/curation']}
@@ -321,7 +383,7 @@ export default function AppShell() {
                 <span
                   className={cn(
                     'app-sidebar__caret',
-                    pipelineExpanded && 'app-sidebar__caret--expanded',
+                    showPipelineChildren && 'app-sidebar__caret--expanded',
                   )}
                   aria-hidden="true"
                 >
@@ -340,7 +402,7 @@ export default function AppShell() {
                 </span>
               </button>
 
-              {pipelineExpanded && (
+              {showPipelineChildren && (
                 <div className="app-sidebar__children">
                   {pipelineChildren.map((child) => {
                     const active =
@@ -350,6 +412,7 @@ export default function AppShell() {
                       <Link
                         key={child.path}
                         to={child.path}
+                        onClick={closeCompactNavGroup}
                         className={cn(
                           'app-sidebar__child-link',
                           active && 'app-sidebar__child-link--active',
