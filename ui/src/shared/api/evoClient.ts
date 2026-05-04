@@ -47,11 +47,19 @@ export interface OrganizationInfo {
     status: 'active' | 'disabled'
 }
 
+export interface MembershipInviterInfo {
+    id: string
+    phone: string
+    nickname: string | null
+}
+
 export interface MembershipInfo {
     id: string
     org_id: string
     role_code: MembershipRole
     status: MembershipStatus
+    invited_by_user_id: string | null
+    invited_by_user: MembershipInviterInfo | null
     organization: OrganizationInfo
 }
 
@@ -215,5 +223,14 @@ export const evoApi = {
         evoRequest(`/organizations/current/members/${membershipId}`, {
             method: 'PATCH',
             body: JSON.stringify(payload),
+        }, true),
+
+    respondMembershipInvitation: (
+        membershipId: string,
+        status: 'active' | 'disabled',
+    ): Promise<OrganizationMember> =>
+        evoRequest(`/organizations/memberships/${membershipId}/response`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status }),
         }, true),
 }

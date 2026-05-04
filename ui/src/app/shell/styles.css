@@ -835,6 +835,7 @@
 }
 
 .header-user-badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -846,6 +847,14 @@
   color: var(--tx);
   font-size: 13px;
   font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.header-user-badge:hover {
+  border-color: rgba(47, 111, 228, 0.28);
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(47, 111, 228, 0.10);
 }
 
 .header-user-badge__avatar {
@@ -869,6 +878,18 @@
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.header-user-badge__notice {
+  position: absolute;
+  top: -2px;
+  right: -1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.14);
 }
 
 .header-logout-btn {
