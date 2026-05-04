@@ -31,9 +31,56 @@ export interface UserInfo {
     phone: string
     nickname: string | null
     status: 'active' | 'disabled'
-    platform_role: 'user' | 'system_admin'
+    memberships: MembershipInfo[]
+    current_membership: MembershipInfo | null
     has_password: boolean
     created_at: string
+}
+
+export type MembershipRole = 'owner' | 'admin' | 'member'
+
+export interface OrganizationInfo {
+    id: string
+    name: string
+    status: 'active' | 'disabled'
+}
+
+export interface MembershipInfo {
+    id: string
+    org_id: string
+    role_code: MembershipRole
+    status: 'active' | 'invited' | 'disabled'
+    organization: OrganizationInfo
+}
+
+export interface OrganizationMember {
+    id: string
+    user_id: string
+    phone: string
+    nickname: string | null
+    role_code: MembershipRole
+    status: 'active' | 'disabled'
+    joined_at: string | null
+}
+
+export interface CurrentOrganization {
+    id: string
+    name: string
+    role_code: MembershipRole
+    members: OrganizationMember[]
+}
+
+export function currentMembershipRole(user: UserInfo | null): MembershipRole | null {
+    return user?.current_membership?.role_code ?? null
+}
+
+export function canManageCollection(user: UserInfo | null): boolean {
+    const role = currentMembershipRole(user)
+    return role === 'owner' || role === 'admin'
+}
+
+export function canManageOrganization(user: UserInfo | null): boolean {
+    return currentMembershipRole(user) === 'owner'
 }
 
 // ─── Core request ─────────────────────────────────────────────────────────────
@@ -143,5 +190,23 @@ export const evoApi = {
         evoRequest('/auth/me/nickname', {
             method: 'PATCH',
             body: JSON.stringify({ nickname }),
+        }, true),
+
+    getCurrentOrganization: (): Promise<CurrentOrganization> =>
+        evoRequest('/organizations/current', {}, true),
+
+    upsertOrganizationMember: (phone: string, roleCode: MembershipRole): Promise<OrganizationMember> =>
+        evoRequest('/organizations/current/members', {
+            method: 'POST',
+            body: JSON.stringify({ phone, role_code: roleCode }),
+        }, true),
+
+    updateOrganizationMember: (
+        membershipId: string,
+        payload: { role_code?: MembershipRole; status?: 'active' | 'disabled' },
+    ): Promise<OrganizationMember> =>
+        evoRequest(`/organizations/current/members/${membershipId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
         }, true),
 }

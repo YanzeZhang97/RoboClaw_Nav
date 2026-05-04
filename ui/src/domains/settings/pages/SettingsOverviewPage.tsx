@@ -10,6 +10,7 @@ import {
 } from '@/domains/provider/api/providerApi'
 import { useSetup } from '@/domains/hardware/setup/store/useSetupStore'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { currentMembershipRole, type MembershipRole } from '@/shared/api/evoClient'
 
 function HardwareIcon() {
     return (
@@ -49,6 +50,25 @@ function AccountIcon() {
             <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
         </svg>
     )
+}
+
+function OrganizationIcon() {
+    return (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18" />
+            <path d="M5 21V7l7-4 7 4v14" />
+            <path d="M9 21v-7h6v7" />
+            <path d="M9 9h.01" />
+            <path d="M15 9h.01" />
+        </svg>
+    )
+}
+
+function roleText(role: MembershipRole | null): string {
+    if (role === 'owner') return 'Owner'
+    if (role === 'admin') return 'Admin'
+    if (role === 'member') return 'Member'
+    return '—'
 }
 
 export default function SettingsOverviewPage() {
@@ -91,6 +111,8 @@ export default function SettingsOverviewPage() {
         : hubEndpointMode === 'mirror'
             ? t('hfMirror')
             : t('hfCustomEndpoint')
+    const orgRole = currentMembershipRole(user)
+    const currentOrg = user?.current_membership?.organization ?? null
 
     return (
         <SettingsPageFrame
@@ -154,7 +176,22 @@ export default function SettingsOverviewPage() {
                     metrics={[
                         { label: t('accountPhone'), value: user ? `${user.phone.slice(0, 3)}****${user.phone.slice(7)}` : '—' },
                         { label: t('accountNickname'), value: user?.nickname || t('accountNicknameNotSet') },
-                        { label: t('accountLevel'), value: user ? (user.platform_role === 'system_admin' ? t('authUserAdmin') : t('authUserNormal')) : '—' },
+                        { label: t('accountLevel'), value: roleText(orgRole) },
+                    ]}
+                />
+
+                <SettingsSummaryCard
+                    to="/settings/organization"
+                    title={t('organizationOverviewTitle')}
+                    description={t('organizationOverviewDesc')}
+                    actionLabel={t('organizationOverviewManage')}
+                    status={currentOrg ? t('settingsStatusReady') : t('settingsNotConfigured')}
+                    accent={currentOrg ? 'ac' : 'yl'}
+                    icon={<OrganizationIcon />}
+                    metrics={[
+                        { label: t('organizationName'), value: currentOrg?.name || '—' },
+                        { label: t('organizationRole'), value: roleText(orgRole) },
+                        { label: t('organizationStatus'), value: user?.current_membership?.status || '—' },
                     ]}
                 />
             </div>

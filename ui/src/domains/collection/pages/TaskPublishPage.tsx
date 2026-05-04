@@ -8,6 +8,7 @@ import {
 } from '@/domains/collection/api/collectionApi'
 import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { canManageCollection } from '@/shared/api/evoClient'
 import { cn } from '@/shared/lib/cn'
 import { ActionButton } from '@/shared/ui'
 
@@ -164,7 +165,7 @@ export default function TaskPublishPage() {
   }
 
   useEffect(() => {
-    if (!isLoggedIn || user?.platform_role !== 'system_admin') return
+    if (!isLoggedIn || !canManageCollection(user)) return
     let cancelled = false
     async function load() {
       try {
@@ -180,7 +181,7 @@ export default function TaskPublishPage() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn, progressDate, user?.platform_role])
+  }, [isLoggedIn, progressDate, user?.current_membership?.role_code])
 
   useEffect(() => () => clearTrashReadyTimer(), [])
 
@@ -493,7 +494,7 @@ export default function TaskPublishPage() {
     return <div className="collection-page"><div className="collection-empty">Checking account...</div></div>
   }
 
-  if (!isLoggedIn || user?.platform_role !== 'system_admin') {
+  if (!isLoggedIn || !canManageCollection(user)) {
     return <Navigate to="/collection/control" replace />
   }
 
