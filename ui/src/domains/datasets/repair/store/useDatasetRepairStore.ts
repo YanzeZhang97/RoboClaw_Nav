@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import {
+  JobConflictError,
   cancelJob,
   getCurrentJob,
   listDatasets,
@@ -22,6 +23,10 @@ const DEFAULT_FILTERS: DatasetRepairFilters = {
   tag: 'all',
 }
 
+interface LoadOptions {
+  keepError?: boolean
+}
+
 interface DatasetRepairStore {
   filters: DatasetRepairFilters
   datasets: DatasetRepairDataset[]
@@ -37,7 +42,7 @@ interface DatasetRepairStore {
     value: DatasetRepairFilters[K],
   ) => void
   resetError: () => void
-  loadDatasets: () => Promise<void>
+  loadDatasets: (options?: LoadOptions) => Promise<void>
   refreshCurrentJob: () => Promise<void>
   startDiagnosis: () => Promise<void>
   subscribeToJob: (jobId: string) => void
@@ -47,6 +52,10 @@ interface DatasetRepairStore {
 
 function isJobActive(job: RepairJobState | null): boolean {
   return job !== null && !TERMINAL_PHASES.has(job.phase)
+}
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback
 }
 
 export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
@@ -65,13 +74,13 @@ export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
 
   resetError: () => set({ error: '' }),
 
-  loadDatasets: async () => {
-    set({ loading: true, error: '' })
+  loadDatasets: async (options) => {
+    set(options?.keepError ? { loading: true } : { loading: true, error: '' })
     try {
       const response = await listDatasets(get().filters)
       set({ datasets: response.datasets, effectiveRoot: response.root })
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : '加载数据集失败' })
+      set({ error: errorMessage(error, '加载数据集失败') })
     } finally {
       set({ loading: false })
     }
@@ -85,7 +94,7 @@ export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
         get().subscribeToJob(job.job_id)
       }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : '获取任务状态失败' })
+      set({ error: errorMessage(error, '获取任务状态失败') })
     }
   },
 
@@ -97,8 +106,15 @@ export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
       set({ currentJob: job })
       get().subscribeToJob(job.job_id)
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : '启动诊断失败' })
-      throw error
+      if (error instanceof JobConflictError) {
+        // Backend rejected start because another job is running. Adopt that
+        // job's state so the user sees the running progress instead of a
+        // confusing stringified error.
+        set({ currentJob: error.job, error: error.message })
+        if (isJobActive(error.job)) get().subscribeToJob(error.job.job_id)
+      } else {
+        set({ error: errorMessage(error, '启动诊断失败') })
+      }
     } finally {
       set({ acting: false })
     }
@@ -111,21 +127,22 @@ export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
       jobId,
       (event) => {
         set((state) => ({ currentJob: applyJobEvent(state.currentJob, event) }))
-        if (event.type === 'error') {
-          const payload = event.data as { error?: string }
-          if (payload.error) set({ error: payload.error })
+        if (event.type === 'error' && event.data.error) {
+          set({ error: event.data.error })
         }
       },
       () => {
         set({ unsubscribe: null })
-        // After SSE closes, refresh dataset list so tags/repairable reflect the result.
-        void get().loadDatasets()
+        // Refresh dataset list so tags/repairable reflect the result; preserve
+        // any error from the SSE error event so the user can see what failed.
+        void get().loadDatasets({ keepError: true })
       },
     )
     set({ unsubscribe: close })
   },
 
   cancelCurrent: async () => {
+    if (get().acting) return
     const job = get().currentJob
     if (!job) return
     set({ acting: true, error: '' })
@@ -133,8 +150,7 @@ export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
       const next = await cancelJob(job.job_id)
       set({ currentJob: next })
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : '取消失败' })
-      throw error
+      set({ error: errorMessage(error, '取消失败') })
     } finally {
       set({ acting: false })
     }

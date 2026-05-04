@@ -51,10 +51,10 @@ export default function DatasetRepairPage() {
 
   const filtersDisabled = isJobActive
   const handleDiagnose = () => {
-    void startDiagnosis().catch(() => undefined)
+    void startDiagnosis()
   }
   const handleCancel = () => {
-    void cancelCurrent().catch(() => undefined)
+    void cancelCurrent()
   }
 
   return (

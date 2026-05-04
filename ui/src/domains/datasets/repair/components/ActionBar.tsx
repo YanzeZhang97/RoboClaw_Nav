@@ -16,7 +16,7 @@ export default function ActionBar({
   onCancel,
 }: ActionBarProps) {
   const diagnoseDisabled = !hasDatasets || isJobActive || acting
-  const cancelDisabled = !isJobActive
+  const cancelDisabled = !isJobActive || acting
   return (
     <div className="flex flex-wrap items-center gap-3">
       <ActionButton

@@ -7,6 +7,13 @@ import type {
 
 const BASE = '/api/dataset-repair'
 
+export class JobConflictError extends Error {
+  constructor(public readonly job: RepairJobState) {
+    super('已有任务进行中')
+    this.name = 'JobConflictError'
+  }
+}
+
 function buildListUrl(filters: DatasetRepairFilters): string {
   const params = new URLSearchParams()
   if (filters.root.trim()) params.set('root', filters.root.trim())
@@ -22,7 +29,7 @@ export function listDatasets(filters: DatasetRepairFilters): Promise<ListDataset
   return api<ListDatasetsResponse>(buildListUrl(filters))
 }
 
-export function startDiagnose(
+export async function startDiagnose(
   filters: DatasetRepairFilters,
   datasetIds?: string[],
 ): Promise<RepairJobState> {
@@ -38,7 +45,23 @@ export function startDiagnose(
   if (datasetIds && datasetIds.length > 0) {
     body.dataset_ids = datasetIds
   }
-  return postJson<RepairJobState>(`${BASE}/diagnose`, body)
+  // Phase 1 backend returns 409 + RepairJobState in `detail` when a job is
+  // already running. The shared api client stringifies non-string detail to
+  // "[object Object]" — bypass it so callers can react to the conflict.
+  const response = await fetch(`${BASE}/diagnose`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (response.status === 409) {
+    const payload = (await response.json()) as { detail: RepairJobState }
+    throw new JobConflictError(payload.detail)
+  }
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `HTTP ${response.status}`)
+  }
+  return (await response.json()) as RepairJobState
 }
 
 export function getCurrentJob(): Promise<{ job: RepairJobState | null }> {

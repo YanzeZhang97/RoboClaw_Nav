@@ -1,11 +1,13 @@
+import type { DatasetJobItem, RepairJobState } from '../types'
 import { jobEventsUrl } from './api'
 
-export type JobEventType = 'snapshot' | 'item' | 'complete' | 'error'
+export type JobEvent =
+  | { type: 'snapshot'; data: RepairJobState }
+  | { type: 'item'; data: DatasetJobItem }
+  | { type: 'complete'; data: RepairJobState }
+  | { type: 'error'; data: { job: RepairJobState; error: string } }
 
-export interface JobEvent {
-  type: JobEventType
-  data: any
-}
+export type JobEventType = JobEvent['type']
 
 const NAMED_EVENTS: JobEventType[] = ['snapshot', 'item', 'complete', 'error']
 
@@ -24,23 +26,31 @@ export function subscribeJobEvents(
     onClose()
   }
 
-  function handleNamed(type: JobEventType, raw: MessageEvent): void {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(raw.data)
-    } catch (err) {
-      onEvent({ type: 'error', data: { error: `Invalid SSE payload: ${String(err)}` } })
-      close()
-      return
-    }
-    onEvent({ type, data: parsed })
-    if (type === 'complete' || type === 'error') {
-      close()
+  function dispatch(type: JobEventType, raw: MessageEvent): void {
+    const data = JSON.parse(raw.data)
+    switch (type) {
+      case 'snapshot':
+        onEvent({ type: 'snapshot', data: data as RepairJobState })
+        break
+      case 'item':
+        onEvent({ type: 'item', data: data as DatasetJobItem })
+        break
+      case 'complete':
+        onEvent({ type: 'complete', data: data as RepairJobState })
+        close()
+        break
+      case 'error':
+        onEvent({
+          type: 'error',
+          data: data as { job: RepairJobState; error: string },
+        })
+        close()
+        break
     }
   }
 
   for (const type of NAMED_EVENTS) {
-    source.addEventListener(type, (event) => handleNamed(type, event as MessageEvent))
+    source.addEventListener(type, (event) => dispatch(type, event as MessageEvent))
   }
 
   source.onerror = () => {
