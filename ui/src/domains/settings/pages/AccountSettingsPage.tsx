@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SettingsPageFrame from '@/domains/settings/components/SettingsPageFrame'
 import { useAuthStore } from '@/shared/lib/authStore'
-import { currentMembershipRole, evoApi } from '@/shared/api/evoClient'
+import {
+    currentMembershipRole,
+    evoApi,
+    membershipRoleLabel,
+    type MembershipInfo,
+    type MembershipInvitationStatus,
+} from '@/shared/api/evoClient'
+import { maskPhone } from '@/shared/lib/phone'
 import { useI18n } from '@/i18n'
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
@@ -360,7 +367,7 @@ function ResetPasswordPanel({ phone, hasPassword, onSuccess }: { phone: string; 
                         <CaptchaRow captchaImg={captchaImg} captchaText={captchaText} onChange={setCaptchaText} onRefresh={fetchCaptcha} disabled={loading} />
                     </div>
                     <p className="text-xs text-[color:var(--tx2)]">
-                        验证码将发送至 {phone.slice(0, 3)}****{phone.slice(7)}
+                        验证码将发送至 {maskPhone(phone)}
                     </p>
                     <button onClick={() => void handleSendSms()} disabled={loading} className={`${btnPrimaryCls} w-full`}>
                         {loading && <Spinner />}{t('accountSendSmsBtn')}
@@ -370,7 +377,7 @@ function ResetPasswordPanel({ phone, hasPassword, onSuccess }: { phone: string; 
                 <>
                     <p className="text-sm text-[color:var(--tx2)]">
                         {t('accountSmsCodeSentTo')}{' '}
-                        <span className="font-semibold text-[color:var(--tx)]">{phone.slice(0, 3)}****{phone.slice(7)}</span>
+                        <span className="font-semibold text-[color:var(--tx)]">{maskPhone(phone)}</span>
                     </p>
                     <input
                         type="text"
@@ -538,26 +545,22 @@ function ExpandableRow({
 export default function AccountSettingsPage() {
     const { t } = useI18n()
     const navigate = useNavigate()
-    const { user, logout } = useAuthStore()
+    const { user, logout, setUser } = useAuthStore()
 
     type Panel = 'change_phone' | 'reset_password'
+    type InviteResult = { kind: 'success' | 'error'; text: string }
     const [openPanel, setOpenPanel] = useState<Panel | null>(null)
+    const [inviteActionId, setInviteActionId] = useState<string | null>(null)
+    const [inviteResult, setInviteResult] = useState<InviteResult | null>(null)
 
     const togglePanel = (panel: Panel) => {
         setOpenPanel((prev) => (prev === panel ? null : panel))
     }
 
-    const maskPhone = (phone: string) =>
-        phone.length >= 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : phone
-
     const membershipRole = currentMembershipRole(user)
-    const roleLabel = membershipRole === 'owner'
-        ? 'Owner'
-        : membershipRole === 'admin'
-            ? 'Admin'
-            : membershipRole === 'member'
-                ? 'Member'
-                : t('settingsNotConfigured')
+    const pendingInvites = user?.memberships.filter((membership) => membership.status === 'invited') ?? []
+    const displayMembership = user?.current_membership ?? pendingInvites[0] ?? null
+    const roleLabel = membershipRole ? membershipRoleLabel(membershipRole) : t('settingsNotConfigured')
 
     const roleColor = membershipRole === 'owner'
         ? 'rgba(234,179,8,0.15)'
@@ -570,6 +573,27 @@ export default function AccountSettingsPage() {
         : membershipRole === 'admin'
             ? 'var(--ac)'
             : 'var(--tx2)'
+
+    const inviterLabel = (membership: MembershipInfo) => {
+        const inviter = membership.invited_by_user
+        if (!inviter) return '组织管理员'
+        return inviter.nickname?.trim() || maskPhone(inviter.phone)
+    }
+
+    const handleInvitation = async (membership: MembershipInfo, status: MembershipInvitationStatus) => {
+        setInviteActionId(membership.id)
+        setInviteResult(null)
+        try {
+            await evoApi.respondMembershipInvitation(membership.id, status)
+            const updated = await evoApi.getMe()
+            setUser(updated)
+            setInviteResult({ kind: 'success', text: status === 'active' ? '已加入组织' : '已拒绝邀请' })
+        } catch (err) {
+            setInviteResult({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
+        } finally {
+            setInviteActionId(null)
+        }
+    }
 
     if (!user) {
         return (
@@ -602,6 +626,52 @@ export default function AccountSettingsPage() {
     return (
         <SettingsPageFrame title={t('accountSettingsTitle')} description={t('accountSettingsDesc')}>
             <div className="max-w-xl mx-auto space-y-6">
+                {pendingInvites.length > 0 && (
+                    <div className="glass-panel px-5 py-4 space-y-4 border border-[rgba(245,158,11,0.28)]">
+                        <div>
+                            <p className="text-sm font-semibold text-[color:var(--tx)]">待处理组织邀请</p>
+                            <p className="mt-1 text-xs text-[color:var(--tx2)]">
+                                同意后会加入对应组织，拒绝后该邀请会被关闭。
+                            </p>
+                        </div>
+                        <div className="space-y-3">
+                            {pendingInvites.map((membership) => (
+                                <div
+                                    key={membership.id}
+                                    className="rounded-2xl border border-[color:var(--bd)] bg-[color:var(--bg)] px-4 py-3"
+                                >
+                                    <p className="text-sm font-medium text-[color:var(--tx)]">
+                                        {inviterLabel(membership)} 邀请你加入 {membership.organization.name}
+                                    </p>
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        <button
+                                            type="button"
+                                            className={`${btnPrimaryCls} px-3 py-2 text-xs`}
+                                            disabled={inviteActionId !== null}
+                                            onClick={() => void handleInvitation(membership, 'active')}
+                                        >
+                                            {inviteActionId === membership.id && <Spinner />}同意
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`${btnSecCls} px-3 py-2 text-xs`}
+                                            disabled={inviteActionId !== null}
+                                            onClick={() => void handleInvitation(membership, 'disabled')}
+                                        >
+                                            拒绝
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        {inviteResult && (
+                            <p className={`text-xs ${inviteResult.kind === 'success' ? 'text-[color:var(--gn)]' : 'text-[#dc3545]'}`}>
+                                {inviteResult.text}
+                            </p>
+                        )}
+                    </div>
+                )}
+
                 {/* 用户信息卡 */}
                 <div className="glass-panel px-5 py-4 flex items-center gap-4">
                     <div
@@ -623,6 +693,9 @@ export default function AccountSettingsPage() {
                             </span>
                             {user.nickname && (
                                 <span className="text-xs text-[color:var(--tx2)] truncate">{user.nickname}</span>
+                            )}
+                            {displayMembership && (
+                                <span className="text-xs text-[color:var(--tx2)] truncate">{displayMembership.organization.name}</span>
                             )}
                         </div>
                     </div>

@@ -6,12 +6,7 @@ import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/shared/lib/authStore'
 import { StatusPill } from '@/shared/ui'
 import { currentMembershipRole, type MembershipRole } from '@/shared/api/evoClient'
-
-/** 手机号脱敏：138****8888 */
-function maskPhone(phone: string): string {
-    if (phone.length !== 11) return phone
-    return `${phone.slice(0, 3)}****${phone.slice(7)}`
-}
+import { maskPhone } from '@/shared/lib/phone'
 
 function roleColor(role: MembershipRole | null): string {
     if (role === 'owner') return '#d97706'
@@ -27,6 +22,7 @@ export default function AppHeader() {
     const { t, locale, setLocale } = useI18n()
     const { user, isLoggedIn, isChecking, logout } = useAuthStore()
     const role = currentMembershipRole(user)
+    const hasPendingInvites = user?.memberships.some((membership) => membership.status === 'invited') ?? false
 
     useEffect(() => {
         void fetchNetworkInfo()
@@ -58,7 +54,13 @@ export default function AppHeader() {
                 {!isChecking && (
                     isLoggedIn && user ? (
                         <>
-                            <div className="header-user-badge" title={maskPhone(user.phone)}>
+                            <button
+                                type="button"
+                                className="header-user-badge"
+                                title={maskPhone(user.phone)}
+                                aria-label="打开账号设置"
+                                onClick={() => navigate('/settings/account')}
+                            >
                                 <div
                                     className="header-user-badge__avatar"
                                     style={{ background: `linear-gradient(180deg, ${roleColor(role)}cc, ${roleColor(role)})` }}
@@ -66,7 +68,8 @@ export default function AppHeader() {
                                     {avatarInitial}
                                 </div>
                                 <span className="header-user-badge__phone">{maskPhone(user.phone)}</span>
-                            </div>
+                                {hasPendingInvites && <span className="header-user-badge__notice" aria-hidden="true" />}
+                            </button>
                             <button
                                 type="button"
                                 onClick={handleLogout}

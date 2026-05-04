@@ -40,6 +40,15 @@ export interface UserInfo {
 export type MembershipRole = 'owner' | 'admin' | 'member'
 export type InviteRole = 'admin' | 'member'
 export type MembershipStatus = 'active' | 'invited' | 'disabled'
+export type MembershipInvitationStatus = Extract<MembershipStatus, 'active' | 'disabled'>
+
+export const INVITE_ROLES: readonly InviteRole[] = ['admin', 'member']
+export const MEMBERSHIP_STATUSES: readonly MembershipStatus[] = ['active', 'invited', 'disabled']
+export const MEMBERSHIP_ROLE_LABELS: Record<MembershipRole, string> = {
+    owner: 'Owner',
+    admin: 'Admin',
+    member: 'Member',
+}
 
 export interface OrganizationInfo {
     id: string
@@ -47,11 +56,19 @@ export interface OrganizationInfo {
     status: 'active' | 'disabled'
 }
 
+export interface MembershipInviterInfo {
+    id: string
+    phone: string
+    nickname: string | null
+}
+
 export interface MembershipInfo {
     id: string
     org_id: string
     role_code: MembershipRole
     status: MembershipStatus
+    invited_by_user_id: string | null
+    invited_by_user: MembershipInviterInfo | null
     organization: OrganizationInfo
 }
 
@@ -74,6 +91,18 @@ export interface CurrentOrganization {
 
 export function currentMembershipRole(user: UserInfo | null): MembershipRole | null {
     return user?.current_membership?.role_code ?? null
+}
+
+export function membershipRoleLabel(role: MembershipRole): string {
+    return MEMBERSHIP_ROLE_LABELS[role]
+}
+
+export function isInviteRole(value: string): value is InviteRole {
+    return (INVITE_ROLES as readonly string[]).includes(value)
+}
+
+export function isMembershipStatus(value: string): value is MembershipStatus {
+    return (MEMBERSHIP_STATUSES as readonly string[]).includes(value)
 }
 
 export function canManageCollection(user: UserInfo | null): boolean {
@@ -215,5 +244,14 @@ export const evoApi = {
         evoRequest(`/organizations/current/members/${membershipId}`, {
             method: 'PATCH',
             body: JSON.stringify(payload),
+        }, true),
+
+    respondMembershipInvitation: (
+        membershipId: string,
+        status: MembershipInvitationStatus,
+    ): Promise<MembershipInfo> =>
+        evoRequest(`/organizations/memberships/${membershipId}/response`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status }),
         }, true),
 }

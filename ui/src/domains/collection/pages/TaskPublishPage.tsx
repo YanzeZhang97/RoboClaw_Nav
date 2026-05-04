@@ -6,43 +6,31 @@ import {
   type CollectionTask,
   type TaskPayload,
 } from '@/domains/collection/api/collectionApi'
+import OrganizationMemberPicker from '@/domains/collection/components/OrganizationMemberPicker'
+import { createMemberInputResolver } from '@/domains/collection/lib/memberInput'
 import { assignmentProgressPct, formatHours, todayIso } from '@/domains/collection/lib/metrics'
 import { useAuthStore } from '@/shared/lib/authStore'
 import {
   canManageCollection,
+  canManageOrganization,
   currentMembershipRole,
   evoApi,
+  INVITE_ROLES,
+  isInviteRole,
+  isMembershipStatus,
+  MEMBERSHIP_STATUSES,
+  membershipRoleLabel,
   type CurrentOrganization,
   type InviteRole,
   type MembershipStatus,
   type OrganizationMember,
 } from '@/shared/api/evoClient'
 import { cn } from '@/shared/lib/cn'
+import { isValidPhone, maskPhone } from '@/shared/lib/phone'
 import { ActionButton } from '@/shared/ui'
-
-const PHONE_PATTERN = /^1\d{10}$/
 
 function secondsToHourValue(seconds: number) {
   return (seconds / 3600).toFixed(1)
-}
-
-function normalizePhoneRows(rows: string[]) {
-  return Array.from(new Set(rows.map((item) => item.trim()).filter(Boolean)))
-}
-
-function invalidPhones(phones: string[]) {
-  return phones.filter((phone) => !PHONE_PATTERN.test(phone))
-}
-
-function maskPhone(phone: string) {
-  if (phone.length !== 11) return phone
-  return `${phone.slice(0, 3)}****${phone.slice(7)}`
-}
-
-function roleLabel(role: string) {
-  if (role === 'owner') return 'Owner'
-  if (role === 'admin') return 'Admin'
-  return 'Member'
 }
 
 function countPublishedAssignments(items: Assignment[]) {
@@ -63,6 +51,8 @@ const emptyTask: TaskPayload = {
   dataset_prefix: 'rec',
   is_active: true,
 }
+
+const EMPTY_ORGANIZATION_MEMBERS: OrganizationMember[] = []
 
 interface AssignmentEditState {
   id: string
@@ -121,6 +111,8 @@ async function loadPublishData(progressDate: string | undefined) {
 export default function TaskPublishPage() {
   const { user, isLoggedIn, isChecking } = useAuthStore()
   const membershipRole = currentMembershipRole(user)
+  const currentOrganizationId = user?.current_membership?.organization.id ?? ''
+  const canEditOrganization = canManageOrganization(user)
   const [view, setView] = useState<'publish' | 'progress' | 'members'>('publish')
   const [tasks, setTasks] = useState<CollectionTask[]>([])
   const [progress, setProgress] = useState<Assignment[]>([])
@@ -152,7 +144,19 @@ export default function TaskPublishPage() {
   const progressDate = allDates ? undefined : targetDate
   const totalTargetSeconds = progress.reduce((sum, item) => sum + item.target_seconds, 0)
   const totalCompletedSeconds = progress.reduce((sum, item) => sum + item.completed_seconds, 0)
-  const inviteRoleOptions: InviteRole[] = membershipRole === 'owner' ? ['admin', 'member'] : ['member']
+  const inviteRoleOptions: readonly InviteRole[] = canEditOrganization ? INVITE_ROLES : ['member']
+  const effectiveInviteRole = canEditOrganization ? memberRole : 'member'
+  const organizationMembers = organization?.members ?? EMPTY_ORGANIZATION_MEMBERS
+  const memberInputResolver = useMemo(
+    () => createMemberInputResolver(organizationMembers),
+    [organizationMembers],
+  )
+  const resolvedPhoneRows = useMemo(
+    () => memberInputResolver.resolveRows(phoneRows),
+    [memberInputResolver, phoneRows],
+  )
+  const canPublishToMembers = resolvedPhoneRows.phones.length > 0 && resolvedPhoneRows.unresolved.length === 0
+  const canInviteMember = Boolean(memberInputResolver.resolveInput(memberPhone))
   const trashReadyTimer = useRef<number | null>(null)
 
   function clearTrashReadyTimer() {
@@ -213,12 +217,9 @@ export default function TaskPublishPage() {
   }, [isLoggedIn, progressDate, user?.current_membership?.role_code])
 
   useEffect(() => {
-    if (membershipRole !== 'admin') return
-    setMemberRole('member')
-  }, [membershipRole])
-
-  useEffect(() => {
-    if (!isLoggedIn || !canManageCollection(user) || view !== 'members') return
+    if (!isLoggedIn || !canManageCollection(user)) return
+    if (view !== 'members' && taskDialog.mode !== 'publish') return
+    if (organization?.id === currentOrganizationId) return
     let cancelled = false
     async function loadMembers() {
       try {
@@ -233,7 +234,7 @@ export default function TaskPublishPage() {
     return () => {
       cancelled = true
     }
-  }, [isLoggedIn, view, user?.current_membership?.role_code])
+  }, [currentOrganizationId, isLoggedIn, organization?.id, taskDialog.mode, user, view])
 
   useEffect(() => () => clearTrashReadyTimer(), [])
 
@@ -259,13 +260,12 @@ export default function TaskPublishPage() {
     setLoading(true)
     setError('')
     try {
-      const phones = normalizePhoneRows(phoneRows)
-      const invalid = invalidPhones(phones)
+      const { phones, unresolved } = memberInputResolver.resolveRows(phoneRows)
       if (phones.length === 0) {
-        throw new Error('请输入手机号')
+        throw new Error('请输入手机号或昵称')
       }
-      if (invalid.length > 0) {
-        throw new Error(`手机号格式不正确：${invalid.join(', ')}`)
+      if (unresolved.length > 0) {
+        throw new Error(`成员不在当前组织或未选择：${unresolved.join(', ')}`)
       }
       if (taskDialog.mode !== 'publish') {
         throw new Error('请选择任务')
@@ -295,7 +295,7 @@ export default function TaskPublishPage() {
     setLoading(true)
     setError('')
     try {
-      if (!PHONE_PATTERN.test(assignmentEditor.phone.trim())) {
+      if (!isValidPhone(assignmentEditor.phone)) {
         throw new Error('手机号格式不正确')
       }
       await collectionApi.upsertAssignment({
@@ -355,14 +355,14 @@ export default function TaskPublishPage() {
     setError('')
     setMemberNotice('')
     try {
-      const phone = memberPhone.trim()
-      if (!PHONE_PATTERN.test(phone)) {
-        throw new Error('手机号格式不正确')
+      const phone = memberInputResolver.resolveInput(memberPhone)
+      if (!phone) {
+        throw new Error('请输入有效手机号，或从当前组织成员里选择昵称')
       }
-      await evoApi.upsertOrganizationMember(phone, membershipRole === 'owner' ? memberRole : 'member')
+      await evoApi.upsertOrganizationMember(phone, effectiveInviteRole)
       setMemberPhone('')
       setMemberRole('member')
-      setMemberNotice('成员已加入当前组织')
+      setMemberNotice('邀请已发送')
       await refreshOrganization()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -543,16 +543,16 @@ export default function TaskPublishPage() {
 
   function renderPhoneInputs() {
     return (
-      <label>
-        <span>手机号</span>
+      <div className="collection-field">
+        <span>成员</span>
         <div className="collection-phone-list">
           {phoneRows.map((phone, index) => (
             <div className="collection-phone-row" key={index}>
-              <input
-                className="collection-input"
+              <OrganizationMemberPicker
                 value={phone}
-                onChange={(event) => updatePhoneRow(index, event.target.value)}
-                placeholder="13800000000"
+                resolver={memberInputResolver}
+                onChange={(value) => updatePhoneRow(index, value)}
+                placeholder="输入手机号或昵称"
                 required={index === 0}
               />
               <button
@@ -575,7 +575,7 @@ export default function TaskPublishPage() {
             </div>
           ))}
         </div>
-      </label>
+      </div>
     )
   }
 
@@ -800,90 +800,104 @@ export default function TaskPublishPage() {
       )}
 
       {view === 'members' && (
-        <section className="collection-panel collection-panel--wide">
-          <div className="collection-panel__head collection-panel__head--progress">
+        <section className="collection-panel collection-panel--wide collection-members-panel">
+          <div className="collection-members-hero">
             <div>
+              <span className="collection-members-hero__eyebrow">组织成员</span>
               <h3>{organization?.name || '当前组织'}</h3>
-              <span>{organization?.members.length || 0} 个成员 · 当前角色 {roleLabel(membershipRole || 'member')}</span>
+              <p>{organization?.members.length || 0} 个成员</p>
             </div>
+            <span className={cn('collection-role-pill', `collection-role-pill--${membershipRole || 'member'}`)}>
+              当前角色 {membershipRoleLabel(membershipRole || 'member')}
+            </span>
           </div>
 
-          <form className="collection-progress-edit" onSubmit={inviteMember}>
-            <div className="collection-progress-edit__grid collection-progress-edit__grid--assignment">
-              <label>
-                <span>手机号</span>
-                <input
-                  className="collection-input"
-                  value={memberPhone}
-                  maxLength={11}
-                  onChange={(event) => setMemberPhone(event.target.value)}
-                  placeholder="13800000000"
-                  required
-                />
-              </label>
-              <label>
-                <span>角色</span>
-                <select
-                  className="collection-input"
-                  value={membershipRole === 'owner' ? memberRole : 'member'}
-                  disabled={membershipRole !== 'owner'}
-                  onChange={(event) => setMemberRole(event.target.value as InviteRole)}
-                >
-                  {inviteRoleOptions.map((role) => (
-                    <option key={role} value={role}>{roleLabel(role)}</option>
-                  ))}
-                </select>
-              </label>
+          <form className="collection-member-invite" onSubmit={inviteMember}>
+            <div className="collection-field">
+              <span>成员</span>
+              <OrganizationMemberPicker
+                value={memberPhone}
+                resolver={memberInputResolver}
+                onChange={setMemberPhone}
+                placeholder="输入手机号或昵称"
+                required
+              />
             </div>
-            <div className="collection-progress-edit__actions">
-              <ActionButton type="submit" disabled={loading || !PHONE_PATTERN.test(memberPhone.trim())}>
-                邀请成员
-              </ActionButton>
-            </div>
+            <label>
+              <span>角色</span>
+              <select
+                className="collection-input"
+                value={effectiveInviteRole}
+                disabled={!canEditOrganization}
+                onChange={(event) => {
+                  if (isInviteRole(event.target.value)) setMemberRole(event.target.value)
+                }}
+              >
+                {inviteRoleOptions.map((role) => (
+                  <option key={role} value={role}>{membershipRoleLabel(role)}</option>
+                ))}
+              </select>
+            </label>
+            <ActionButton
+              className="collection-member-invite__submit"
+              type="submit"
+              disabled={loading || !canInviteMember}
+            >
+              邀请成员
+            </ActionButton>
           </form>
 
-          <div className="collection-progress-list">
+          <div className="collection-member-list">
             {(organization?.members || []).map((member) => {
-              const editable = membershipRole === 'owner' && member.role_code !== 'owner'
+              const editable = canEditOrganization && member.role_code !== 'owner'
               return (
-                <div className="collection-progress-item" key={member.id}>
-                  <div className="collection-progress-row">
+                <article className="collection-member-card" key={member.id}>
+                  <div className="collection-member-card__identity">
+                    <span className="collection-member-card__avatar">
+                      {(member.nickname || member.phone).slice(0, 1)}
+                    </span>
                     <div>
-                      <strong>{maskPhone(member.phone)}</strong>
-                      <span>{member.nickname || '未设置昵称'}</span>
-                    </div>
-                    <div className="collection-progress-row__value">
-                      {roleLabel(member.role_code)}
-                    </div>
-                    <div className="collection-progress-row__actions">
-                      {editable ? (
-                        <>
-                          <select
-                            className="collection-input collection-input--date"
-                            value={member.role_code}
-                            disabled={loading}
-                            onChange={(event) => void updateMember(member, { role_code: event.target.value as InviteRole })}
-                          >
-                            <option value="admin">Admin</option>
-                            <option value="member">Member</option>
-                          </select>
-                          <select
-                            className="collection-input collection-input--date"
-                            value={member.status}
-                            disabled={loading}
-                            onChange={(event) => void updateMember(member, { status: event.target.value as MembershipStatus })}
-                          >
-                            <option value="active">active</option>
-                            <option value="invited">invited</option>
-                            <option value="disabled">disabled</option>
-                          </select>
-                        </>
-                      ) : (
-                        <span className="collection-progress-row__value">{member.status}</span>
-                      )}
+                      <strong>{member.nickname || '未设置昵称'}</strong>
+                      <span>{maskPhone(member.phone)}</span>
                     </div>
                   </div>
-                </div>
+                  <div className="collection-member-card__meta">
+                    <span className={cn('collection-role-pill', `collection-role-pill--${member.role_code}`)}>
+                      {membershipRoleLabel(member.role_code)}
+                    </span>
+                    <span className={cn('collection-status-pill', `collection-status-pill--${member.status}`)}>
+                      {member.status}
+                    </span>
+                  </div>
+                  {editable && (
+                    <div className="collection-member-card__actions">
+                      <select
+                        className="collection-input collection-input--compact"
+                        value={member.role_code}
+                        disabled={loading}
+                        onChange={(event) => {
+                          if (isInviteRole(event.target.value)) void updateMember(member, { role_code: event.target.value })
+                        }}
+                      >
+                        {INVITE_ROLES.map((role) => (
+                          <option key={role} value={role}>{membershipRoleLabel(role)}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="collection-input collection-input--compact"
+                        value={member.status}
+                        disabled={loading}
+                        onChange={(event) => {
+                          if (isMembershipStatus(event.target.value)) void updateMember(member, { status: event.target.value })
+                        }}
+                      >
+                        {MEMBERSHIP_STATUSES.map((status) => (
+                          <option key={status} value={status}>{status}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </article>
               )
             })}
             {!organization && <div className="collection-empty collection-empty--compact">正在读取组织成员</div>}
@@ -915,7 +929,6 @@ export default function TaskPublishPage() {
               <form className="collection-modal-form" onSubmit={createTask}>
                 {renderTaskFields(taskDialog.draft, (draft) => setTaskDialog({ ...taskDialog, draft }))}
                 <div className="collection-modal__actions">
-                  <button type="button" className="collection-link-button" onClick={closeTaskDialog}>取消</button>
                   <ActionButton type="submit" disabled={loading}>创建</ActionButton>
                 </div>
               </form>
@@ -940,7 +953,6 @@ export default function TaskPublishPage() {
               <form className="collection-modal-form" onSubmit={updateTask}>
                 {renderTaskFields(taskDialog.draft, (draft) => setTaskDialog({ ...taskDialog, draft }))}
                 <div className="collection-modal__actions">
-                  <button type="button" className="collection-link-button" onClick={() => setTaskDialog({ mode: 'details', taskId: taskDialog.taskId })}>取消</button>
                   <ActionButton type="submit" disabled={loading}>确定</ActionButton>
                 </div>
               </form>
@@ -966,7 +978,7 @@ export default function TaskPublishPage() {
                 </div>
                 <div className="collection-modal__actions">
                   <button type="button" className="collection-link-button" onClick={() => setTaskDialog({ mode: 'details', taskId: taskDialog.taskId })}>返回</button>
-                  <ActionButton type="submit" disabled={loading || normalizePhoneRows(phoneRows).length === 0}>发布</ActionButton>
+                  <ActionButton type="submit" disabled={loading || !canPublishToMembers}>发布</ActionButton>
                 </div>
               </form>
             )}
@@ -995,7 +1007,6 @@ export default function TaskPublishPage() {
               <span>{dialogTask.num_episodes} eps · {dialogTask.fps} fps · {dialogTask.episode_time_s}s</span>
             </div>
             <div className="collection-modal__actions">
-              <button type="button" className="collection-link-button" onClick={closeTaskDialog}>取消</button>
               <ActionButton type="button" variant="danger" disabled={loading} onClick={deleteTask}>确认删除</ActionButton>
             </div>
           </section>
