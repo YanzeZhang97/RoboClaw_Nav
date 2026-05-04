@@ -6,12 +6,7 @@ import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/shared/lib/authStore'
 import { StatusPill } from '@/shared/ui'
 import { currentMembershipRole, type MembershipRole } from '@/shared/api/evoClient'
-
-/** 手机号脱敏：138****8888 */
-function maskPhone(phone: string): string {
-    if (phone.length !== 11) return phone
-    return `${phone.slice(0, 3)}****${phone.slice(7)}`
-}
+import { maskPhone } from '@/shared/lib/phone'
 
 function roleColor(role: MembershipRole | null): string {
     if (role === 'owner') return '#d97706'

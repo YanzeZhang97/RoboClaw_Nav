@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import SettingsPageFrame from '@/domains/settings/components/SettingsPageFrame'
 import { useAuthStore } from '@/shared/lib/authStore'
-import { currentMembershipRole, evoApi, type MembershipInfo } from '@/shared/api/evoClient'
+import {
+    currentMembershipRole,
+    evoApi,
+    membershipRoleLabel,
+    type MembershipInfo,
+    type MembershipInvitationStatus,
+} from '@/shared/api/evoClient'
+import { maskPhone } from '@/shared/lib/phone'
 import { useI18n } from '@/i18n'
 
 // ─── SVG Icons ────────────────────────────────────────────────────────────────
@@ -360,7 +367,7 @@ function ResetPasswordPanel({ phone, hasPassword, onSuccess }: { phone: string; 
                         <CaptchaRow captchaImg={captchaImg} captchaText={captchaText} onChange={setCaptchaText} onRefresh={fetchCaptcha} disabled={loading} />
                     </div>
                     <p className="text-xs text-[color:var(--tx2)]">
-                        验证码将发送至 {phone.slice(0, 3)}****{phone.slice(7)}
+                        验证码将发送至 {maskPhone(phone)}
                     </p>
                     <button onClick={() => void handleSendSms()} disabled={loading} className={`${btnPrimaryCls} w-full`}>
                         {loading && <Spinner />}{t('accountSendSmsBtn')}
@@ -370,7 +377,7 @@ function ResetPasswordPanel({ phone, hasPassword, onSuccess }: { phone: string; 
                 <>
                     <p className="text-sm text-[color:var(--tx2)]">
                         {t('accountSmsCodeSentTo')}{' '}
-                        <span className="font-semibold text-[color:var(--tx)]">{phone.slice(0, 3)}****{phone.slice(7)}</span>
+                        <span className="font-semibold text-[color:var(--tx)]">{maskPhone(phone)}</span>
                     </p>
                     <input
                         type="text"
@@ -541,27 +548,19 @@ export default function AccountSettingsPage() {
     const { user, logout, setUser } = useAuthStore()
 
     type Panel = 'change_phone' | 'reset_password'
+    type InviteResult = { kind: 'success' | 'error'; text: string }
     const [openPanel, setOpenPanel] = useState<Panel | null>(null)
     const [inviteActionId, setInviteActionId] = useState<string | null>(null)
-    const [inviteMsg, setInviteMsg] = useState('')
+    const [inviteResult, setInviteResult] = useState<InviteResult | null>(null)
 
     const togglePanel = (panel: Panel) => {
         setOpenPanel((prev) => (prev === panel ? null : panel))
     }
 
-    const maskPhone = (phone: string) =>
-        phone.length >= 11 ? `${phone.slice(0, 3)}****${phone.slice(7)}` : phone
-
     const membershipRole = currentMembershipRole(user)
     const pendingInvites = user?.memberships.filter((membership) => membership.status === 'invited') ?? []
     const displayMembership = user?.current_membership ?? pendingInvites[0] ?? null
-    const roleLabel = membershipRole === 'owner'
-        ? 'Owner'
-        : membershipRole === 'admin'
-            ? 'Admin'
-            : membershipRole === 'member'
-                ? 'Member'
-                : t('settingsNotConfigured')
+    const roleLabel = membershipRole ? membershipRoleLabel(membershipRole) : t('settingsNotConfigured')
 
     const roleColor = membershipRole === 'owner'
         ? 'rgba(234,179,8,0.15)'
@@ -581,16 +580,16 @@ export default function AccountSettingsPage() {
         return inviter.nickname?.trim() || maskPhone(inviter.phone)
     }
 
-    const handleInvitation = async (membership: MembershipInfo, status: 'active' | 'disabled') => {
+    const handleInvitation = async (membership: MembershipInfo, status: MembershipInvitationStatus) => {
         setInviteActionId(membership.id)
-        setInviteMsg('')
+        setInviteResult(null)
         try {
             await evoApi.respondMembershipInvitation(membership.id, status)
             const updated = await evoApi.getMe()
             setUser(updated)
-            setInviteMsg(status === 'active' ? '已加入组织' : '已拒绝邀请')
+            setInviteResult({ kind: 'success', text: status === 'active' ? '已加入组织' : '已拒绝邀请' })
         } catch (err) {
-            setInviteMsg(err instanceof Error ? err.message : String(err))
+            setInviteResult({ kind: 'error', text: err instanceof Error ? err.message : String(err) })
         } finally {
             setInviteActionId(null)
         }
@@ -665,9 +664,9 @@ export default function AccountSettingsPage() {
                                 </div>
                             ))}
                         </div>
-                        {inviteMsg && (
-                            <p className={`text-xs ${inviteMsg.startsWith('已') ? 'text-[color:var(--gn)]' : 'text-[#dc3545]'}`}>
-                                {inviteMsg}
+                        {inviteResult && (
+                            <p className={`text-xs ${inviteResult.kind === 'success' ? 'text-[color:var(--gn)]' : 'text-[#dc3545]'}`}>
+                                {inviteResult.text}
                             </p>
                         )}
                     </div>

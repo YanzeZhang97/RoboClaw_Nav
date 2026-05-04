@@ -1,41 +1,16 @@
 import { useMemo, useState } from 'react'
+import {
+  memberLabel,
+  type MemberInputResolver,
+} from '@/domains/collection/lib/memberInput'
 import { type OrganizationMember } from '@/shared/api/evoClient'
 import { cn } from '@/shared/lib/cn'
 
-const PHONE_PATTERN = /^1\d{10}$/
 const MAX_SUGGESTIONS = 6
-
-function normalized(value: string) {
-  return value.trim().toLowerCase()
-}
-
-function memberMatches(member: OrganizationMember, query: string) {
-  const needle = normalized(query)
-  if (!needle) return false
-  return member.phone.includes(needle) || normalized(member.nickname || '').includes(needle)
-}
-
-function memberLabel(member: OrganizationMember) {
-  return member.nickname?.trim() || member.phone
-}
-
-export function resolveOrganizationMemberInput(value: string, members: OrganizationMember[]) {
-  const query = value.trim()
-  if (PHONE_PATTERN.test(query)) return query
-  return resolveOrganizationMemberSelection(query, members)
-}
-
-export function resolveOrganizationMemberSelection(value: string, members: OrganizationMember[]) {
-  const query = value.trim()
-  const exactMatches = members.filter((member) => (
-    normalized(member.nickname || '') === normalized(query) || member.phone === query
-  ))
-  return exactMatches.length === 1 ? exactMatches[0].phone : null
-}
 
 interface OrganizationMemberPickerProps {
   value: string
-  members: OrganizationMember[]
+  resolver: MemberInputResolver
   onChange: (value: string) => void
   disabled?: boolean
   inputClassName?: string
@@ -45,7 +20,7 @@ interface OrganizationMemberPickerProps {
 
 export default function OrganizationMemberPicker({
   value,
-  members,
+  resolver,
   onChange,
   disabled = false,
   inputClassName,
@@ -54,8 +29,8 @@ export default function OrganizationMemberPicker({
 }: OrganizationMemberPickerProps) {
   const [focused, setFocused] = useState(false)
   const suggestions = useMemo(
-    () => members.filter((member) => memberMatches(member, value)).slice(0, MAX_SUGGESTIONS),
-    [members, value],
+    () => resolver.suggestions(value, MAX_SUGGESTIONS),
+    [resolver, value],
   )
   const showSuggestions = focused && value.trim().length > 0 && suggestions.length > 0
 

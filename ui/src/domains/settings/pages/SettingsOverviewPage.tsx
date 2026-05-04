@@ -10,6 +10,7 @@ import {
 } from '@/domains/provider/api/providerApi'
 import { useSetup } from '@/domains/hardware/setup/store/useSetupStore'
 import { useAuthStore } from '@/shared/lib/authStore'
+import { maskPhone } from '@/shared/lib/phone'
 
 function HardwareIcon() {
     return (
@@ -94,6 +95,7 @@ export default function SettingsOverviewPage() {
     const visibleMembership = user?.current_membership
         ?? user?.memberships.find((membership) => membership.status === 'invited')
         ?? null
+    const maskedPhone = user ? maskPhone(user.phone) : '—'
 
     return (
         <SettingsPageFrame
@@ -155,7 +157,7 @@ export default function SettingsOverviewPage() {
                     accent={isLoggedIn ? 'gn' : 'yl'}
                     icon={<AccountIcon />}
                     metrics={[
-                        { label: t('accountPhone'), value: user ? `${user.phone.slice(0, 3)}****${user.phone.slice(7)}` : '—' },
+                        { label: t('accountPhone'), value: maskedPhone },
                         { label: t('accountNickname'), value: user?.nickname || t('accountNicknameNotSet') },
                         { label: t('organizationName'), value: visibleMembership?.organization.name || t('settingsNotConfigured') },
                     ]}
