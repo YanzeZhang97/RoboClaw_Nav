@@ -56,6 +56,52 @@ def test_list_datasets_route(tmp_path: Path) -> None:
     assert {item["name"] for item in payload["datasets"]} == {"a"}
 
 
+def test_list_datasets_route_rejects_root_outside_scan_anchor(tmp_path: Path) -> None:
+    outside_root = tmp_path.parent / f"{tmp_path.name}-outside"
+    dataset_dir = _make_dataset(outside_root, "a")
+    coord = DatasetRepairCoordinator(tmp_path, diagnose_fn=_healthy)
+    client = TestClient(_build_app(coord))
+
+    response = client.get(
+        "/api/dataset-repair/datasets",
+        params={"root": str(outside_root)},
+    )
+
+    assert response.status_code == 400
+    assert "inside" in response.json()["detail"]
+    assert not (dataset_dir / "meta" / "repair_status.json").exists()
+
+
+def test_diagnose_route_rejects_root_outside_scan_anchor(tmp_path: Path) -> None:
+    outside_root = tmp_path.parent / f"{tmp_path.name}-outside"
+    _make_dataset(outside_root, "a")
+    coord = DatasetRepairCoordinator(tmp_path, diagnose_fn=_healthy)
+    client = TestClient(_build_app(coord))
+
+    response = client.post(
+        "/api/dataset-repair/diagnose",
+        json={"filters": {"root": str(outside_root)}},
+    )
+
+    assert response.status_code == 400
+    assert "inside" in response.json()["detail"]
+
+
+def test_repair_route_rejects_root_outside_scan_anchor(tmp_path: Path) -> None:
+    outside_root = tmp_path.parent / f"{tmp_path.name}-outside"
+    _make_dataset(outside_root, "a")
+    coord = DatasetRepairCoordinator(tmp_path, diagnose_fn=_meta_stale, repair_fn=_stub_repair)
+    client = TestClient(_build_app(coord))
+
+    response = client.post(
+        "/api/dataset-repair/repair",
+        json={"filters": {"root": str(outside_root)}},
+    )
+
+    assert response.status_code == 400
+    assert "inside" in response.json()["detail"]
+
+
 async def test_diagnose_then_jobs_current(tmp_path: Path) -> None:
     import httpx
 

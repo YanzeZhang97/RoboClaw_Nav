@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Callable
 from uuid import uuid4
 
@@ -41,6 +41,7 @@ DEFAULT_VCODEC = "h264"
 ITEM_BOUNDARY_EXCEPTIONS = (FileNotFoundError, PermissionError, OSError, ValueError)
 TERMINAL_PHASES: set[JobPhase] = {"completed", "failed", "cancelled"}
 ACTIVE_PHASES: set[JobPhase] = {"diagnosing", "repairing", "cancelling"}
+JOB_ERROR_EVENT = "job-error"
 
 
 class JobConflictError(RuntimeError):
@@ -66,6 +67,7 @@ class DatasetRepairCoordinator:
         vcodec: str = DEFAULT_VCODEC,
     ) -> None:
         self._datasets_root = datasets_root
+        self._resolved_datasets_root = datasets_root.expanduser().resolve()
         # Cleaned artifacts live as a sibling of the scan root so they don't
         # pollute the source listing or get confused with backups.
         self._cleaned_root = cleaned_root or (datasets_root.parent / "cleaned")
@@ -95,7 +97,12 @@ class DatasetRepairCoordinator:
         filters: DatasetRepairFilter,
     ) -> list[DatasetRepairDataset]:
         root = self._resolve_scan_root(filters.root)
-        return await asyncio.to_thread(selection.list_datasets, root, filters)
+        return await asyncio.to_thread(
+            selection.list_datasets,
+            root,
+            filters,
+            id_root=self._resolved_datasets_root,
+        )
 
     def _resolve_scan_root(self, requested: str | None) -> Path:
         """Reject any caller-supplied root that escapes the configured scan
@@ -104,9 +111,12 @@ class DatasetRepairCoordinator:
         has write access.
         """
         if not requested:
-            return self._datasets_root
-        candidate = Path(requested).expanduser().resolve()
-        anchor = self._datasets_root.resolve()
+            return self._resolved_datasets_root
+        candidate = Path(requested).expanduser()
+        anchor = self._resolved_datasets_root
+        if not candidate.is_absolute():
+            candidate = anchor / candidate
+        candidate = candidate.resolve()
         if candidate != anchor and not candidate.is_relative_to(anchor):
             raise ValueError(
                 f"root must be inside {anchor}; got {candidate}"
@@ -179,11 +189,8 @@ class DatasetRepairCoordinator:
                     # Match the live-failure shape so late subscribers don't
                     # lose ``data.error`` (the frontend reducer reads it).
                     yield {
-                        "type": "error",
-                        "data": {
-                            "job": job.model_dump(),
-                            "error": job.error or "job failed",
-                        },
+                        "type": JOB_ERROR_EVENT,
+                        "data": _job_error_payload(job),
                     }
                 else:
                     yield {"type": "complete", "data": job.model_dump()}
@@ -191,7 +198,7 @@ class DatasetRepairCoordinator:
             while True:
                 event = await queue.get()
                 yield event
-                if event["type"] in ("complete", "error"):
+                if event["type"] in ("complete", JOB_ERROR_EVENT):
                     return
         finally:
             subs = self._subscribers.get(job_id)
@@ -238,8 +245,7 @@ class DatasetRepairCoordinator:
         )
 
     def _cleaned_output_path(self, dataset_id: str) -> Path:
-        slug = dataset_id.rsplit("/", 1)[-1]
-        return self._cleaned_root / slug
+        return self._cleaned_root / _safe_dataset_id_path(dataset_id)
 
     async def _run_diagnosis(
         self,
@@ -283,8 +289,8 @@ class DatasetRepairCoordinator:
             self._log(f"job {job.job_id} failed: {type(exc).__name__}: {exc}")
             await self._publish(
                 job.job_id,
-                "error",
-                {"job": job.model_dump(), "error": job.error},
+                JOB_ERROR_EVENT,
+                _job_error_payload(job),
             )
             if self._active_job is job:
                 self._active_job = None
@@ -324,6 +330,7 @@ class DatasetRepairCoordinator:
             record_diagnosis,
             dataset_path,
             damage_type=damage,
+            repairable=result.repairable,
             job_id=job.job_id,
         )
         self._log(f"{dataset.id}: diagnosed damage={damage} repairable={result.repairable}")
@@ -382,11 +389,12 @@ class DatasetRepairCoordinator:
         self._log(f"{dataset.id}: outcome={result.outcome} damage={damage}{suffix}")
 
         if result.outcome == "repaired":
-            cleaned_id = f"cleaned/{cleaned_path.name}"
+            cleaned_id = f"cleaned/{_safe_dataset_id_path(dataset.id).as_posix()}"
             await asyncio.to_thread(
                 record_diagnosis,
                 dataset_path,
                 damage_type=damage,
+                repairable=diagnosis.repairable,
                 job_id=job.job_id,
             )
             await asyncio.to_thread(
@@ -401,6 +409,7 @@ class DatasetRepairCoordinator:
                 mark_checked,
                 dataset_path,
                 damage_type="healthy",
+                repairable=diagnosis.repairable,
                 job_id=job.job_id,
             )
 
@@ -441,10 +450,25 @@ def _bump_summary(summary: DamageSummary, damage: str, repairable: bool) -> None
         summary.unrepairable += 1
 
 
+def _job_error_payload(job: RepairJobState) -> dict:
+    return {"job": job.model_dump(), "error": job.error or "job failed"}
+
+
+def _safe_dataset_id_path(dataset_id: str) -> PurePosixPath:
+    path = PurePosixPath(dataset_id)
+    if (
+        not dataset_id
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        raise ValueError(f"Invalid dataset id: {dataset_id!r}")
+    return path
+
+
 def _consume_task_exception(task: asyncio.Task) -> None:
     """Done callback that retrieves and discards any worker exception so
     asyncio doesn't log "Task exception was never retrieved".  The exception
-    has already been published as an SSE ``error`` event by the worker.
+    has already been published as an SSE ``job-error`` event by the worker.
     """
     if not task.cancelled():
         task.exception()

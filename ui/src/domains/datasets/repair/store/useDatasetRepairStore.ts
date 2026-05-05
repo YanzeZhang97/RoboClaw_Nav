@@ -142,14 +142,14 @@ export const useDatasetRepairStore = create<DatasetRepairStore>((set, get) => ({
       jobId,
       (event) => {
         set((state) => ({ currentJob: applyJobEvent(state.currentJob, event) }))
-        if (event.type === 'error' && event.data.error) {
+        if (event.type === 'job-error' && event.data.error) {
           set({ error: event.data.error })
         }
       },
       () => {
         set({ unsubscribe: null })
         // Refresh dataset list so tags/repairable reflect the result; preserve
-        // any error from the SSE error event so the user can see what failed.
+        // any error from the SSE job-error event so the user can see what failed.
         void get().loadDatasets({ keepError: true })
       },
     )

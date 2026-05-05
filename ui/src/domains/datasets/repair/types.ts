@@ -80,6 +80,7 @@ export interface RepairJobState {
   items: DatasetJobItem[]
   started_at: string
   updated_at: string
+  error: string | null
 }
 
 export interface ListDatasetsResponse {
