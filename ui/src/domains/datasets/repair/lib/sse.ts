@@ -5,11 +5,11 @@ export type JobEvent =
   | { type: 'snapshot'; data: RepairJobState }
   | { type: 'item'; data: DatasetJobItem }
   | { type: 'complete'; data: RepairJobState }
-  | { type: 'error'; data: { job: RepairJobState; error: string } }
+  | { type: 'job-error'; data: { job: RepairJobState; error: string } }
 
 export type JobEventType = JobEvent['type']
 
-const NAMED_EVENTS: JobEventType[] = ['snapshot', 'item', 'complete', 'error']
+const NAMED_EVENTS: JobEventType[] = ['snapshot', 'item', 'complete', 'job-error']
 
 export function subscribeJobEvents(
   jobId: string,
@@ -27,10 +27,6 @@ export function subscribeJobEvents(
   }
 
   function dispatch(type: JobEventType, raw: MessageEvent): void {
-    // Browser-generated transport ``error`` events surface here too (because
-    // ``error`` is also one of our named server events); they carry no JSON
-    // payload. Skip them — ``onerror`` below already handles disconnects.
-    if (typeof raw.data !== 'string') return
     const data = JSON.parse(raw.data)
     switch (type) {
       case 'snapshot':
@@ -43,9 +39,9 @@ export function subscribeJobEvents(
         onEvent({ type: 'complete', data: data as RepairJobState })
         close()
         break
-      case 'error':
+      case 'job-error':
         onEvent({
-          type: 'error',
+          type: 'job-error',
           data: data as { job: RepairJobState; error: string },
         })
         close()

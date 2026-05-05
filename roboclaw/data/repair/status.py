@@ -27,6 +27,7 @@ class DatasetRepairStatus:
     last_checked_at: str | None = None
     last_repaired_at: str | None = None
     last_damage_type: str | None = None
+    repairable: bool | None = None
     last_repair_job_id: str | None = None
     source_dataset_id: str | None = None
     cleaned_dataset_id: str | None = None
@@ -97,6 +98,7 @@ def mark_dirty(
     status = load_status(dataset_dir) or DatasetRepairStatus()
     status.tag = "dirty"
     status.last_damage_type = None
+    status.repairable = None
     status.diagnosis_hash = None
     if source is not None:
         status.source_dataset_id = source
@@ -108,6 +110,7 @@ def mark_checked(
     dataset_dir: Path,
     *,
     damage_type: str = HEALTHY_DAMAGE,
+    repairable: bool | None = None,
     job_id: str | None = None,
     cleaned_dataset_id: str | None = None,
 ) -> DatasetRepairStatus:
@@ -121,6 +124,8 @@ def mark_checked(
     status.tag = "checked"
     status.last_checked_at = utc_now_iso()
     status.last_damage_type = damage_type
+    if repairable is not None:
+        status.repairable = repairable
     if job_id is not None:
         status.last_repair_job_id = job_id
     if cleaned_dataset_id is not None:
@@ -133,6 +138,7 @@ def record_diagnosis(
     dataset_dir: Path,
     *,
     damage_type: str,
+    repairable: bool | None = None,
     job_id: str | None = None,
     diagnosis_hash: str | None = None,
 ) -> DatasetRepairStatus:
@@ -141,6 +147,7 @@ def record_diagnosis(
     now = utc_now_iso()
     status.last_diagnosed_at = now
     status.last_damage_type = damage_type
+    status.repairable = repairable
     if damage_type == HEALTHY_DAMAGE:
         status.tag = "checked"
         status.last_checked_at = now

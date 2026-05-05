@@ -211,7 +211,18 @@ async def test_list_datasets_uses_filters_root(tmp_path: Path) -> None:
 
     items = await coord.list_datasets(DatasetRepairFilter(root=str(other_root)))
 
-    assert {item.id for item in items} == {"z"}
+    assert {item.id for item in items} == {"second/z"}
+
+
+async def test_list_datasets_accepts_relative_filters_root(tmp_path: Path) -> None:
+    local_root = tmp_path / "local"
+    local_root.mkdir()
+    _make_dataset(local_root, "z")
+    coord = DatasetRepairCoordinator(tmp_path)
+
+    items = await coord.list_datasets(DatasetRepairFilter(root="local"))
+
+    assert {item.id for item in items} == {"local/z"}
 
 
 # ----------------------------- start_repair ----------------------------------
@@ -257,7 +268,9 @@ async def test_repair_completes_and_passes_output_dir(tmp_path: Path) -> None:
     scan_root = tmp_path / "local"
     scan_root.mkdir()
     cleaned_root = tmp_path / "cleaned"
-    a = _make_dataset(scan_root, "a")
+    nested_root = scan_root / "team"
+    nested_root.mkdir()
+    a = _make_dataset(nested_root, "a")
     repair_fn = _make_repair_fn({a.name: DamageType.META_STALE})
     coord = DatasetRepairCoordinator(
         scan_root,
@@ -276,7 +289,7 @@ async def test_repair_completes_and_passes_output_dir(tmp_path: Path) -> None:
     # Repair function must receive the cleaned-output path.
     assert len(repair_fn.received) == 1  # type: ignore[attr-defined]
     call = repair_fn.received[0]  # type: ignore[attr-defined]
-    expected = cleaned_root / "a"
+    expected = cleaned_root / "team" / "a"
     assert call["output_dir"] == expected
     assert call["dry_run"] is False
     assert final.items[0].output_path == str(expected)
@@ -301,6 +314,7 @@ async def test_repair_writes_repair_status_with_cleaned_id(tmp_path: Path) -> No
     assert status.tag == "checked"
     assert status.cleaned_dataset_id == "cleaned/a"
     assert status.last_damage_type == "meta_stale"
+    assert status.repairable is True
     assert status.last_repair_job_id == job.job_id
 
 
@@ -444,7 +458,7 @@ async def test_list_datasets_accepts_root_inside_scan_anchor(tmp_path: Path) -> 
 
 async def test_late_subscriber_to_failed_job_receives_structured_error(tmp_path: Path) -> None:
     """When a job has already failed, ``stream_events`` must emit
-    ``{"job": ..., "error": ...}`` for the terminal ``error`` event so late
+    ``{"job": ..., "error": ...}`` for the terminal ``job-error`` event so late
     subscribers see the same shape as live failures.
     """
     _make_dataset(tmp_path, "a")
@@ -468,7 +482,7 @@ async def test_late_subscriber_to_failed_job_receives_structured_error(tmp_path:
     async for event in coord.stream_events(job.job_id):
         events.append(event)
 
-    error_events = [e for e in events if e["type"] == "error"]
+    error_events = [e for e in events if e["type"] == "job-error"]
     assert len(error_events) == 1
     payload = error_events[0]["data"]
     assert isinstance(payload, dict)
