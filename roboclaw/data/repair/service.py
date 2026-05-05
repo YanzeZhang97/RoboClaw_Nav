@@ -57,12 +57,16 @@ class DatasetRepairCoordinator:
         self,
         datasets_root: Path,
         *,
+        cleaned_root: Path | None = None,
         diagnose_fn: DiagnoseFn | None = None,
         repair_fn: RepairFn | None = None,
         task: str = DEFAULT_TASK,
         vcodec: str = DEFAULT_VCODEC,
     ) -> None:
         self._datasets_root = datasets_root
+        # Cleaned artifacts live as a sibling of the scan root so they don't
+        # pollute the source listing or get confused with backups.
+        self._cleaned_root = cleaned_root or (datasets_root.parent / "cleaned")
         self._diagnose_fn: DiagnoseFn = diagnose_fn or diagnose_dataset
         self._repair_fn: RepairFn = repair_fn or repair_dataset
         self._task = task
@@ -199,11 +203,8 @@ class DatasetRepairCoordinator:
         )
 
     def _cleaned_output_path(self, dataset_id: str) -> Path:
-        """Phase 3 will write repairs here; we expose it now so the UI can
-        preview the target path on every job item.
-        """
         slug = dataset_id.rsplit("/", 1)[-1]
-        return self._datasets_root / "cleaned" / "local" / slug
+        return self._cleaned_root / slug
 
     async def _run_diagnosis(
         self,
@@ -339,9 +340,7 @@ class DatasetRepairCoordinator:
         _bump_summary(job.summary, damage, diagnosis.repairable)
 
         if result.outcome == "repaired":
-            # cleaned artifact lives at <root>/cleaned/local/<slug>; its dataset_id
-            # (the relative path future scans would surface) is "cleaned/local/<slug>".
-            cleaned_id = f"cleaned/local/{cleaned_path.name}"
+            cleaned_id = f"cleaned/{cleaned_path.name}"
             await asyncio.to_thread(
                 record_diagnosis,
                 dataset_path,

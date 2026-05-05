@@ -254,10 +254,14 @@ async def test_start_repair_returns_repairing_phase(tmp_path: Path) -> None:
 
 
 async def test_repair_completes_and_passes_output_dir(tmp_path: Path) -> None:
-    a = _make_dataset(tmp_path, "a")
+    scan_root = tmp_path / "local"
+    scan_root.mkdir()
+    cleaned_root = tmp_path / "cleaned"
+    a = _make_dataset(scan_root, "a")
     repair_fn = _make_repair_fn({a.name: DamageType.META_STALE})
     coord = DatasetRepairCoordinator(
-        tmp_path,
+        scan_root,
+        cleaned_root=cleaned_root,
         diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
         repair_fn=repair_fn,
     )
@@ -272,16 +276,19 @@ async def test_repair_completes_and_passes_output_dir(tmp_path: Path) -> None:
     # Repair function must receive the cleaned-output path.
     assert len(repair_fn.received) == 1  # type: ignore[attr-defined]
     call = repair_fn.received[0]  # type: ignore[attr-defined]
-    expected = tmp_path / "cleaned" / "local" / "a"
+    expected = cleaned_root / "a"
     assert call["output_dir"] == expected
     assert call["dry_run"] is False
     assert final.items[0].output_path == str(expected)
 
 
 async def test_repair_writes_repair_status_with_cleaned_id(tmp_path: Path) -> None:
-    a = _make_dataset(tmp_path, "a")
+    scan_root = tmp_path / "local"
+    scan_root.mkdir()
+    a = _make_dataset(scan_root, "a")
     coord = DatasetRepairCoordinator(
-        tmp_path,
+        scan_root,
+        cleaned_root=tmp_path / "cleaned",
         diagnose_fn=_make_diagnose({a.name: DamageType.META_STALE}),
         repair_fn=_make_repair_fn({a.name: DamageType.META_STALE}, outcome="repaired"),
     )
@@ -292,7 +299,7 @@ async def test_repair_writes_repair_status_with_cleaned_id(tmp_path: Path) -> No
     status = status_module.load_status(a)
     assert status is not None
     assert status.tag == "checked"
-    assert status.cleaned_dataset_id == "cleaned/local/a"
+    assert status.cleaned_dataset_id == "cleaned/a"
     assert status.last_damage_type == "meta_stale"
     assert status.last_repair_job_id == job.job_id
 

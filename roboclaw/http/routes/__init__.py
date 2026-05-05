@@ -60,6 +60,9 @@ def register_all_routes(
     register_curation_routes(app)
     register_dataset_repair_routes(
         app,
-        DatasetRepairCoordinator(service.datasets.root),
+        DatasetRepairCoordinator(
+            service.datasets.root / "local",
+            cleaned_root=service.datasets.root / "cleaned",
+        ),
     )
     register_explorer_routes(app)
